@@ -131,6 +131,22 @@ python tests/test_mcp_handshake.py
 - `tools/convert_xls.py` 针对特定教务系统导出的表格结构编写，其他学校可能需要改列映射。
 - 新闻源可能限流（如 60s 聚合返回 Cloudflare 1027），此时其余源仍然工作。
 
+## English summary
+
+An MCP (stdio) server that exposes **campus timetable queries** and **multi-source trending news**
+as 11 tools, renders a dark-theme weekly timetable PNG with Pillow, and can push that image
+straight to WeChat. Ships with protocol-level handshake tests, offline assertions and design notes.
+
+```bash
+pip install -r requirements.txt
+python tests/verify_news_pipeline.py      # offline assertions (stubs the MCP layer)
+python tests/test_mcp_handshake.py        # real stdio handshake: initialize / tools/list / tools/call
+```
+
+Point your MCP client at `config/cherry-studio-mcp.example.json` (replace `<REPO_DIR>`).
+Timetable and news preferences live in `config/courses.json` and `config/news_prefs.json` —
+both are fictional samples here. News is aggregated from public APIs; the WeChat push is optional.
+
 ## License
 
 MIT，见 [LICENSE](LICENSE)。
