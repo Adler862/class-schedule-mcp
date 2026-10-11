@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "class-schedule-news": {
+      "command": "python",
+      "args": [
+        "<REPO_DIR>/src/class_schedule_mcp.py"
+      ],
+      "description": "课表查询 + 多源热点新闻 + 每日早报（MCP stdio 服务）"
+    }
+  }
+}
