@@ -23,6 +23,32 @@
 | `handle_command` | 自然语言总入口（"明天课表""下一节""早报""多关注考研""科技少一点"） |
 | `get_news_prefs` / `set_news_prefs` | 查看 / 动态调整新闻偏好 |
 
+## Web 版（浏览器直接用，不需要 MCP 客户端）
+
+MCP 服务只能被 AI 客户端调用，普通同学用不上——教务系统导出的那张课表图，
+还是得靠截图每周对。本分支给同一套引擎加了一层 Web 入口：
+
+```bash
+python src/server.py                    # http://127.0.0.1:8765
+python src/server.py --host 0.0.0.0     # 手机连同一局域网访问
+```
+
+- **周课表网格**：6 大节 × 7 天，单双周课程自动过滤，今天所在列高亮
+- **问一句**：`明天几节课` / `下一节` / `哪天空` / `数据结构什么时候上`
+- **导出 `.ics`**：整学期课程一次性导入手机日历。一门课一个 `VEVENT` + `RRULE`，
+  而不是逐周展开——前者 8 条，后者上百条，手机日历里会很难看
+- **深链**：`?q=明天几节课` 可以把问题带在链接里，方便分享
+
+零第三方依赖，只用标准库；Pillow 只在要用到图片渲染时才需要。
+
+| 接口 | 作用 |
+|---|---|
+| `GET /api/meta` | 班级、学期起点、当前周次 |
+| `GET /api/week?week=N` | 整周课表（省略 `week` 用当前周） |
+| `GET /api/today?date=YYYY-MM-DD` | 某日课表 + 下一节课倒计时 |
+| `GET /api/ask?q=…` | 自然语言问答，返回 `{intent, text, data}` |
+| `GET /api/export.ics` | 日历订阅 |
+
 ## 架构
 
 ```
@@ -103,6 +129,7 @@ python tests/test_mcp_handshake.py
 
 | 脚本 | 作用 |
 |---|---|
+| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / Web API / ICS 导出 / MCP 输出回归（51 个） |
 | `tests/test_mcp_handshake.py` | 真实拉起服务进程，走 `initialize` / `tools/list` / `tools/call`，断言工具数量与名称 |
 | `tests/verify_news_pipeline.py` | 离线断言：桩掉 MCP 依赖后直接执行服务源码，用模拟数据校验板块配额与排序 |
 | `tests/live_test_news.py` | 联网抽查：只开部分源，看真实返回的分类与来源分布 |

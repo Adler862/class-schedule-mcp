@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>课表助手</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --card2:#1d212a; --line:#262b36;
+    --fg:#e9ecf3; --muted:#8b93a7; --accent:#5b8cff; --accent-2:#7c5cff;
+    --shadow:0 8px 28px rgba(0,0,0,.38);
+    --radius:14px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f4f5f8; --card:#ffffff; --card2:#f7f8fb; --line:#e4e7ee;
+      --fg:#15181f; --muted:#6b7280; --accent:#2f6bff; --accent-2:#6b46ff;
+      --shadow:0 6px 20px rgba(18,24,40,.08);
+    }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--fg); min-height:100vh;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",
+                "Microsoft YaHei",system-ui,sans-serif;
+    font-size:15px; line-height:1.5;
+    padding:18px 14px calc(28px + env(safe-area-inset-bottom));
+    max-width:860px; margin:0 auto;
+  }
+  header{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px}
+  .title{flex:1;min-width:0}
+  .title h1{margin:0;font-size:19px;font-weight:650;letter-spacing:.2px}
+  .title p{margin:3px 0 0;font-size:12.5px;color:var(--muted);
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ghost{
+    border:1px solid var(--line); background:var(--card); color:var(--fg);
+    border-radius:10px; padding:8px 12px; font-size:13px; cursor:pointer;
+    font-family:inherit; white-space:nowrap; transition:.15s;
+  }
+  .ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .ghost:active{transform:scale(.97)}
+
+  .weekbar{
+    display:flex;align-items:center;gap:8px;margin-bottom:12px;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:8px 10px;
+  }
+  .weekbar .label{flex:1;text-align:center;font-size:14px;font-weight:600}
+  .weekbar .label span{color:var(--muted);font-weight:400;font-size:12.5px;margin-left:6px}
+  .nav{
+    width:34px;height:34px;border-radius:9px;border:1px solid var(--line);
+    background:var(--card2);color:var(--fg);font-size:16px;cursor:pointer;
+    display:grid;place-items:center;user-select:none;
+  }
+  .nav:hover{border-color:var(--accent);color:var(--accent)}
+
+  .grid{
+    display:grid; gap:5px; margin-bottom:16px;
+    grid-template-columns:34px repeat(7, minmax(0,1fr));
+  }
+  .ghead{
+    text-align:center;font-size:11.5px;color:var(--muted);padding:2px 0 6px;
+    line-height:1.25;
+  }
+  .ghead b{display:block;font-weight:600;font-size:12.5px;color:var(--fg)}
+  .ghead.today b{color:var(--accent)}
+  .gt{
+    font-size:10.5px;color:var(--muted);text-align:right;padding-top:8px;
+    line-height:1.3;
+  }
+  .cell{
+    background:var(--card); border:1px solid var(--line); border-radius:9px;
+    min-height:52px;
+  }
+  .course{
+    border-radius:9px; padding:6px 5px; overflow:hidden;
+    border:1px solid var(--ca); background:var(--cb);
+    display:flex; flex-direction:column; gap:2px; cursor:default;
+  }
+  .course .n{font-size:11.5px;font-weight:600;line-height:1.25;
+             word-break:break-word;color:var(--fg);
+             display:-webkit-box;-webkit-box-orient:vertical;
+             -webkit-line-clamp:3;overflow:hidden}
+  .course .m{font-size:10px;color:var(--muted);line-height:1.25;
+             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .course .t{font-size:9.5px;color:var(--muted);opacity:.85}
+
+  .panel{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px;box-shadow:var(--shadow);
+  }
+  .panel h2{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--muted);
+            letter-spacing:.4px;text-transform:uppercase}
+  .askrow{display:flex;gap:8px}
+  .askrow input{
+    flex:1;min-width:0;background:var(--card2);border:1px solid var(--line);
+    border-radius:11px;padding:11px 13px;color:var(--fg);font-size:14px;
+    font-family:inherit;outline:none;
+  }
+  .askrow input:focus{border-color:var(--accent)}
+  .askrow button{
+    border:none;border-radius:11px;padding:0 18px;font-size:14px;cursor:pointer;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;
+    font-family:inherit;font-weight:600;
+  }
+  .askrow button:active{transform:scale(.97)}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .chip{
+    border:1px solid var(--line);background:var(--card2);color:var(--muted);
+    border-radius:20px;padding:5px 11px;font-size:12.5px;cursor:pointer;
+    font-family:inherit;
+  }
+  .chip:hover{color:var(--accent);border-color:var(--accent)}
+  .answer{
+    margin-top:12px;padding:12px 13px;border-radius:11px;
+    background:var(--card2);border:1px solid var(--line);
+    font-size:13.5px;white-space:pre-wrap;display:none;
+  }
+  .answer.show{display:block}
+  .answer .kw{color:var(--accent);font-weight:600}
+  footer{margin-top:16px;text-align:center;font-size:11.5px;color:var(--muted);line-height:1.7}
+  .loading{opacity:.45}
+  @media (max-width:430px){
+    body{padding:14px 10px 24px;font-size:14px}
+    .grid{gap:4px;grid-template-columns:26px repeat(7,minmax(0,1fr))}
+    .course{padding:4px 2px;gap:1px}
+    .course .n{font-size:9.5px;line-height:1.15;-webkit-line-clamp:4;letter-spacing:-.2px}
+    .course .m{font-size:8.5px;letter-spacing:-.2px}
+    .course .t{display:none}
+    .ghead{font-size:10px;padding:2px 0 4px}
+    .ghead b{font-size:11px}
+    .cell{min-height:56px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">
+    <h1 id="cls">课表</h1>
+    <p id="sub">加载中…</p>
+  </div>
+  <button class="ghost" id="ics">导出日历</button>
+</header>
+
+<div class="weekbar">
+  <button class="nav" id="prev">‹</button>
+  <div class="label" id="weekLabel">—<span></span></div>
+  <button class="nav" id="next">›</button>
+  <button class="ghost" id="thisWeek">本周</button>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="panel">
+  <h2>问一句</h2>
+  <div class="askrow">
+    <input id="q" placeholder="明天几节课 / 下一节是什么课">
+    <button id="ask">问</button>
+  </div>
+  <div class="chips">
+    <button class="chip">今天有什么课</button>
+    <button class="chip">明天几节课</button>
+    <button class="chip">下一节</button>
+    <button class="chip">哪天空</button>
+    <button class="chip">本周课表</button>
+    <button class="chip">今天几节课</button>
+  </div>
+  <div class="answer" id="answer"></div>
+</div>
+
+<footer>
+  数据来自教务系统导出的课表 · 本地运行，不上传任何内容<br>
+  点「导出日历」可把整学期课程导入手机日历
+</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const PALETTE = [212, 262, 168, 32, 340, 190, 96, 288];
+
+let meta = null;
+let curWeek = null;
+
+function colorOf(name){
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 997;
+  const hue = PALETTE[h % PALETTE.length];
+  return {
+    border: `hsl(${hue} 62% 52% / .38)`,
+    bg:     `hsl(${hue} 62% 52% / .14)`
+  };
+}
+
+function rowOf(period){ return Math.floor((period - 1) / 2) + 1; }
+
+function renderGrid(days){
+  const grid = $('#grid');
+  grid.innerHTML = '';
+  const maxPeriod = Math.max(8, ...days.flatMap(d => d.courses.map(c => c.endPeriod || 0)));
+  const rows = Math.max(4, Math.ceil(maxPeriod / 2));
+
+  // 表头
+  const blank = document.createElement('div');
+  blank.className = 'ghead';
+  grid.appendChild(blank);
+  const todayIso = new Date().toLocaleDateString('sv-SE');
+  days.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'ghead' + (d.date === todayIso ? ' today' : '');
+    el.innerHTML = `<b>${d.weekday.replace('周','')}</b>${d.date.slice(5).replace('-','/')}`;
+    grid.appendChild(el);
+  });
+
+  // 节次列 + 空格子
+  for (let r = 1; r <= rows; r++){
+    const t = document.createElement('div');
+    t.className = 'gt';
+    const sp = (r - 1) * 2 + 1;
+    t.textContent = sp + '-' + (sp + 1);
+    grid.appendChild(t);
+    for (let c = 0; c < 7; c++){
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.style.gridRow = String(r + 1);
+      cell.style.gridColumn = String(c + 2);
+      grid.appendChild(cell);
+    }
+  }
+
+  // 课程块
+  days.forEach((d, i) => {
+    d.courses.forEach(c => {
+      const startRow = rowOf(c.startPeriod);
+      const endRow = rowOf(c.endPeriod) + 1;
+      const span = Math.max(1, endRow - startRow);
+      const el = document.createElement('div');
+      const col = colorOf(c.name);
+      el.className = 'course';
+      el.style.gridRow = `${startRow + 1} / span ${span}`;
+      el.style.gridColumn = String(i + 2);
+      el.style.setProperty('--ca', col.border);
+      el.style.setProperty('--cb', col.bg);
+      el.title = `${c.name}\n${c.start}–${c.end}\n${c.location}\n${c.teacher}`;
+      el.innerHTML = `<div class="n">${c.name}</div>
+                      <div class="m">${c.location || ''}</div>
+                      <div class="t">${c.start || ''}</div>`;
+      grid.appendChild(el);
+    });
+  });
+
+  grid.style.gridTemplateRows = `auto repeat(${rows}, minmax(52px, auto))`;
+}
+
+async function loadWeek(week){
+  const grid = $('#grid');
+  grid.classList.add('loading');
+  try{
+    const url = week == null ? '/api/week' : `/api/week?week=${week}`;
+    const data = await (await fetch(url)).json();
+    curWeek = data.week;
+    const label = $('#weekLabel');
+    const first = data.days[0].date.slice(5).replace('-','/');
+    const last = data.days[6].date.slice(5).replace('-','/');
+    label.innerHTML = `第 ${data.week} 周<span>${first} – ${last}</span>`;
+    renderGrid(data.days);
+  }catch(e){
+    grid.innerHTML = '<div style="grid-column:1/-1;color:var(--muted)">课表加载失败</div>';
+  }finally{
+    grid.classList.remove('loading');
+  }
+}
+
+async function loadMeta(){
+  meta = await (await fetch('/api/meta')).json();
+  $('#cls').textContent = meta.className || '课表';
+  $('#sub').textContent =
+    `${meta.student || ''} · 今天${meta.weekday} · 第 ${meta.currentWeek} 周`;
+}
+
+async function ask(text){
+  const q = (text ?? $('#q').value).trim();
+  if (!q) return;
+  const ans = $('#answer');
+  ans.classList.add('show');
+  ans.textContent = '…';
+  try{
+    const data = await (await fetch('/api/ask?q=' + encodeURIComponent(q))).json();
+    ans.textContent = data.text || '';
+    const d = data.data;
+    if (data.intent === 'week' && d && d.days) {
+      curWeek = d.week;
+      $('#weekLabel').innerHTML =
+        `第 ${d.week} 周<span>${d.days[0].date.slice(5).replace('-','/')} – ${d.days[6].date.slice(5).replace('-','/')}</span>`;
+      renderGrid(d.days);
+    } else if (d && d.courses && d.week != null) {
+      await loadWeek(d.week);
+    }
+  }catch(e){
+    ans.textContent = '请求失败，检查服务是否还在跑。';
+  }
+}
+
+$('#prev').onclick = () => loadWeek((curWeek ?? meta.currentWeek) - 1);
+$('#next').onclick = () => loadWeek((curWeek ?? meta.currentWeek) + 1);
+$('#thisWeek').onclick = () => loadWeek(meta.currentWeek);
+$('#ics').onclick = () => { location.href = '/api/export.ics'; };
+$('#ask').onclick = () => ask();
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+document.querySelectorAll('.chip').forEach(c =>
+  c.onclick = () => { $('#q').value = c.textContent; ask(c.textContent); });
+
+(async () => {
+  await loadMeta();
+  await loadWeek(meta.currentWeek);
+  // 支持 ?q=明天几节课 深链，便于分享/演示
+  const preset = new URLSearchParams(location.search).get('q');
+  if (preset){ $('#q').value = preset; ask(preset); }
+})();
+</script>
+</body>
+</html>
