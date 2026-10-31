@@ -43,11 +43,12 @@
   .ghost:active{transform:scale(.97)}
 
   .weekbar{
-    display:flex;align-items:center;gap:8px;margin-bottom:12px;
+    display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px;
     background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
     padding:8px 10px;
   }
-  .weekbar .label{flex:1;text-align:center;font-size:14px;font-weight:600}
+  .weekbar .label{flex:0 1 auto;min-width:170px;text-align:center;font-size:14px;font-weight:600}
+  #thisWeek{margin-left:auto}
   .weekbar .label span{color:var(--muted);font-weight:400;font-size:12.5px;margin-left:6px}
   .nav{
     width:34px;height:34px;border-radius:9px;border:1px solid var(--line);
