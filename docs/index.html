@@ -127,6 +127,53 @@
   .answer .kw{color:var(--accent);font-weight:600}
   @keyframes answer-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
   footer{margin-top:18px;text-align:center;font-size:11px;color:var(--faint);line-height:1.8}
+  .course{position:relative}
+  .course.moved{border-left-style:dashed}
+  .course.moved::after{
+    content:"调";position:absolute;top:2px;right:3px;font-size:8px;line-height:1;
+    opacity:.55;letter-spacing:0;
+  }
+  .ovbar{
+    display:none;align-items:center;gap:8px;margin:0 2px 12px;padding:7px 10px;
+    border:1px solid var(--line);border-radius:9px;background:var(--surface);
+    font-size:11.5px;color:var(--muted);
+  }
+  .ovbar.show{display:flex}
+  .ovbar b{color:var(--fg);font-weight:500}
+  .ovbar .sp{flex:1}
+  .ovbar button{
+    border:0;background:transparent;color:var(--accent);font-size:11.5px;
+    cursor:pointer;padding:2px 4px;
+  }
+  .scrim{
+    position:fixed;inset:0;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;
+    transition:opacity .18s;z-index:40;
+  }
+  .scrim.show{opacity:1;pointer-events:auto}
+  .sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:41;transform:translateY(102%);
+    transition:transform .22s ease-out;background:var(--surface);
+    border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+    max-width:640px;margin:0 auto;max-height:80vh;overflow:auto;
+  }
+  .sheet.show{transform:translateY(0)}
+  .sheet h3{margin:0;font-size:14px;font-weight:600}
+  .sheet .sub{font-size:11.5px;color:var(--muted);margin:3px 0 14px}
+  .sheet .lbl{font-size:11px;color:var(--faint);margin:0 0 6px}
+  .sheet .row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .opt{
+    border:1px solid var(--line);background:var(--surface-raised);color:var(--fg);
+    border-radius:8px;padding:7px 9px;font-size:11.5px;cursor:pointer;line-height:1.2;
+  }
+  .opt.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+  .sheet .acts{display:flex;gap:8px;margin-top:6px}
+  .sheet .acts button{
+    flex:1;height:42px;border-radius:10px;font-size:13px;cursor:pointer;
+    border:1px solid var(--line);background:var(--surface);color:var(--fg);
+  }
+  .sheet .acts .primary{background:var(--accent);color:var(--on-accent);border:0;font-weight:600}
+  .sheet .acts .danger{color:#d9534f}
   .loading{opacity:.45}
   @media (max-width:430px){
     body{padding:18px 10px calc(24px + env(safe-area-inset-bottom));font-size:13px}
@@ -190,6 +237,11 @@
   <button class="ghost" id="thisWeek">本周</button>
 </div>
 
+<div class="ovbar" id="ovbar">
+  <span id="ovtext"></span><span class="sp"></span>
+  <button id="ovclear">全部撤销</button>
+</div>
+
 <div class="grid" id="grid"></div>
 
 <div class="panel">
@@ -207,6 +259,9 @@
   </div>
   <div class="answer" id="answer"></div>
 </div>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet"></div>
 
 <footer>
   这个文件可以离线用 · 不联网、不上传任何数据 · 可以直接发到手机上打开<br>
@@ -239,7 +294,57 @@ function weekOfDate(d){
   var days = Math.floor((d - startDate) / 86400000);
   return Math.floor(days / 7) + 1;
 }
-function weekDays(w){ return DATA.weeks[String(w)] || null; }
+/* ---------- 调课（例外层）----------
+   课表定义不改，只在上面叠一层「这一次」：
+   某门课在某天某节的那一节，挪到另一天另一节，或者直接停课。
+   这样前面几周上过的课不会被历史性地改写。
+   记录存在本机浏览器里，换设备不同步。 */
+var OV_KEY = 'kebiao-overrides-v1';
+var OV = (function(){
+  try { return JSON.parse(localStorage.getItem(OV_KEY) || '[]') || []; } catch (e) { return []; }
+})();
+function saveOv(){
+  try { localStorage.setItem(OV_KEY, JSON.stringify(OV)); } catch (e) {}
+}
+function ovOf(name, date, period){
+  for (var i = 0; i < OV.length; i++){
+    var o = OV[i];
+    if (o.name === name && o.fromDate === date && o.fromPeriod === period) return o;
+  }
+  return null;
+}
+function applyOverrides(days){
+  if (!OV.length) return days;
+  var out = days.map(function(d){
+    return {
+      day: d.day, weekday: d.weekday, date: d.date,
+      courses: d.courses.filter(function(c){ return !ovOf(c.name, d.date, c.startPeriod); })
+    };
+  });
+  OV.forEach(function(o){
+    if (o.type !== 'move') return;
+    var t = null;
+    for (var i = 0; i < out.length; i++) if (out[i].date === o.toDate) t = out[i];
+    if (!t) return;
+    var end = o.toPeriod + (o.span || 2) - 1;
+    t.courses.push({
+      name: o.name, teacher: o.teacher || '', location: o.location || '', room: o.room || '',
+      day: t.day, startPeriod: o.toPeriod, endPeriod: end,
+      start: DATA.periodTimes[String(o.toPeriod)] || '',
+      end: DATA.periodEnd[String(end)] || '',
+      moved: true
+    });
+  });
+  out.forEach(function(d){
+    d.courses.sort(function(a, b){ return a.startPeriod - b.startPeriod; });
+  });
+  return out;
+}
+
+function weekDays(w){
+  var d = DATA.weeks[String(w)];
+  return d ? applyOverrides(d) : null;
+}
 
 /* 颜色按课程名查构建时给的序号：同一门课整学期同色，不同课尽量不同色。
    以前用「名字哈希 % 8」，15 门课必然撞色，扫一眼分不出哪门是哪门。 */
@@ -291,7 +396,7 @@ function renderGrid(days){
       var span = Math.max(1, rowOf(c.endPeriod) + 1 - startRow);
       var el = document.createElement('div');
       var col = colorOf(c.name);
-      el.className = 'course';
+      el.className = 'course' + (c.moved ? ' moved' : '');
       el.style.gridRow = (startRow + 1) + ' / span ' + span;
       el.style.gridColumn = String(i + 2);
       el.style.setProperty('--ca', col.border);
@@ -301,6 +406,9 @@ function renderGrid(days){
                    + '<div class="m"><span class="full">' + (c.location || '') + '</span>'
                    + '<span class="short">' + (c.room || c.location || '') + '</span></div>'
                    + '<div class="t">' + (c.start || '') + '</div>';
+      el.onclick = (function(course, dayInfo){
+        return function(){ openSheet(course, dayInfo); };
+      })(c, d);
       grid.appendChild(el);
     });
   });
@@ -514,6 +622,162 @@ function buildICS(){
   return L.join('\r\n') + '\r\n';
 }
 
+/* ---------- 调课面板 ---------- */
+var edit = null;
+var sheetEl = $('#sheet'), scrimEl = $('#scrim');
+
+function dateOfWeekDay(w, day){
+  return new Date(startDate.getTime() + ((w - 1) * 7 + (day - 1)) * 86400000);
+}
+function ovTargetOf(name, date, period){
+  for (var i = 0; i < OV.length; i++){
+    var o = OV[i];
+    if (o.type === 'move' && o.name === name && o.toDate === date && o.toPeriod === period) return o;
+  }
+  return null;
+}
+function refresh(){
+  updateOvbar();
+  showWeek(clampWeek(curWeek || weekOfDate(NOW)));
+}
+function updateOvbar(){
+  var bar = $('#ovbar');
+  if (OV.length){
+    bar.classList.add('show');
+    $('#ovtext').innerHTML = '已记录 <b>' + OV.length + '</b> 处调课';
+  } else {
+    bar.classList.remove('show');
+  }
+}
+function closeSheet(){
+  sheetEl.classList.remove('show');
+  scrimEl.classList.remove('show');
+}
+
+function openSheet(c, day){
+  var w = weekOfDate(parseISO(day.date));
+  var exists = ovOf(c.name, day.date, c.startPeriod) || ovTargetOf(c.name, day.date, c.startPeriod);
+  var span = Math.max(1, (c.endPeriod || c.startPeriod + 1) - c.startPeriod + 1);
+  edit = {
+    name: c.name, date: day.date, week: w, period: c.startPeriod, span: span,
+    teacher: c.teacher || '', location: c.location || '', room: c.room || '',
+    exists: exists, weekOffset: 0, toDay: day.day,
+    toPeriod: Math.floor((c.startPeriod - 1) / 2) * 2 + 1
+  };
+  if (exists && exists.type === 'move'){
+    var tw = weekOfDate(parseISO(exists.toDate));
+    edit.weekOffset = Math.max(0, Math.min(2, tw - w));
+    edit.toDay = parseISO(exists.toDate).getDay() || 7;
+    edit.toPeriod = exists.toPeriod;
+  }
+  renderSheet();
+  sheetEl.classList.add('show');
+  scrimEl.classList.add('show');
+}
+
+function renderSheet(){
+  var tw = edit.week + edit.weekOffset;
+  var toDate = dateOfWeekDay(tw, edit.toDay);
+  var endP = edit.toPeriod + edit.span - 1;
+  var valid = tw >= 1 && tw <= DATA.maxWeek;
+  var noop = isoOf(toDate) === edit.date && edit.toPeriod === edit.period;
+
+  var h = '<h3>' + edit.name + '</h3>';
+  h += '<div class="sub">第 ' + edit.week + ' 周 ' + DAY_NAMES[
+        parseISO(edit.date).getDay() || 7] + ' 第 ' + edit.period + '-' +
+        (edit.period + edit.span - 1) + ' 节 · ' + (edit.location || '') + '</div>';
+
+  h += '<div class="lbl">移到</div><div class="row">';
+  ['本周', '下周', '下下周'].forEach(function(t, i){
+    h += '<button class="opt' + (edit.weekOffset === i ? ' on' : '') +
+         '" data-k="wo" data-v="' + i + '">' + t + '</button>';
+  });
+  h += '</div>';
+
+  h += '<div class="lbl">星期</div><div class="row">';
+  for (var d = 1; d <= 7; d++){
+    h += '<button class="opt' + (edit.toDay === d ? ' on' : '') +
+         '" data-k="day" data-v="' + d + '">' + DAY_NAMES[d] + '</button>';
+  }
+  h += '</div>';
+
+  h += '<div class="lbl">第几大节</div><div class="row">';
+  for (var n = 1; n <= 6; n++){
+    var sp = (n - 1) * 2 + 1;
+    h += '<button class="opt' + (edit.toPeriod === sp ? ' on' : '') +
+         '" data-k="p" data-v="' + sp + '">' + n + '</button>';
+  }
+  h += '</div>';
+
+  h += '<div class="sub" style="margin:0 0 12px">→ ' +
+       (valid ? ('第 ' + tw + ' 周 ' + DAY_NAMES[edit.toDay] + ' ' +
+                 (DATA.periodTimes[String(edit.toPeriod)] || '') + '–' +
+                 (DATA.periodEnd[String(endP)] || '') + '（第 ' + edit.toPeriod + '-' + endP + ' 节）')
+              : '超出学期范围') +
+       (noop ? '　·　与原时间相同' : '') + '</div>';
+
+  h += '<div class="acts">';
+  h += '<button data-k="close">取消</button>';
+  if (edit.exists){
+    h += '<button class="danger" data-k="undo">撤销调课</button>';
+  } else {
+    h += '<button class="danger" data-k="cancel">本次停课</button>';
+  }
+  h += '<button class="primary" data-k="ok"' + (valid && !noop ? '' : ' disabled style="opacity:.5"') +
+       '>确认调课</button>';
+  h += '</div>';
+
+  sheetEl.innerHTML = h;
+}
+
+function saveException(obj){
+  OV = OV.filter(function(o){
+    return !(o.name === obj.name && o.fromDate === obj.fromDate && o.fromPeriod === obj.fromPeriod);
+  });
+  if (obj) OV.push(obj);
+  saveOv();
+  closeSheet();
+  refresh();
+}
+
+sheetEl.onclick = function(e){
+  var t = e.target.closest ? e.target.closest('[data-k]') : null;
+  if (!t) return;
+  var k = t.getAttribute('data-k');
+  var v = t.getAttribute('data-v');
+  if (k === 'wo'){ edit.weekOffset = +v; renderSheet(); }
+  else if (k === 'day'){ edit.toDay = +v; renderSheet(); }
+  else if (k === 'p'){ edit.toPeriod = +v; renderSheet(); }
+  else if (k === 'close'){ closeSheet(); }
+  else if (k === 'undo'){
+    var o = edit.exists;
+    if (!o){ closeSheet(); return; }
+    OV = OV.filter(function(x){
+      return !(x.name === o.name && x.fromDate === o.fromDate && x.fromPeriod === o.fromPeriod);
+    });
+    saveOv(); closeSheet(); refresh();
+  }
+  else if (k === 'cancel'){
+    saveException({ name: edit.name, fromDate: edit.date, fromPeriod: edit.period,
+                    span: edit.span, type: 'cancel',
+                    teacher: edit.teacher, location: edit.location, room: edit.room });
+  }
+  else if (k === 'ok'){
+    var tw = edit.week + edit.weekOffset;
+    if (tw < 1 || tw > DATA.maxWeek) return;
+    saveException({ name: edit.name, fromDate: edit.date, fromPeriod: edit.period,
+                    span: edit.span, type: 'move',
+                    toDate: isoOf(dateOfWeekDay(tw, edit.toDay)), toPeriod: edit.toPeriod,
+                    teacher: edit.teacher, location: edit.location, room: edit.room });
+  }
+};
+scrimEl.onclick = closeSheet;
+$('#ovclear').onclick = function(){
+  if (!OV.length) return;
+  if (!confirm('撤销全部 ' + OV.length + ' 处调课？')) return;
+  OV = []; saveOv(); refresh();
+};
+
 $('#prev').onclick = function(){ showWeek(Math.max(1, (curWeek || 1) - 1)); };
 $('#next').onclick = function(){ showWeek(Math.min(DATA.maxWeek, (curWeek || 1) + 1)); };
 $('#thisWeek').onclick = function(){ showWeek(clampWeek(weekOfDate(NOW))); };
@@ -535,6 +799,7 @@ var cw = weekOfDate(NOW);
 $('#sub').textContent = (DATA.meta.student || '') + ' · 今天' + DAY_NAMES[NOW.getDay() || 7]
   + ' · 第 ' + clampWeek(cw) + ' 周';
 showWeek(clampWeek(cw));
+updateOvbar();
 
 var preset = (location.search.match(/[?&]q=([^&]*)/) || [])[1];
 if (preset){
