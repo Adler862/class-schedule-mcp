@@ -168,11 +168,14 @@ class PagesArtifactTest(unittest.TestCase):
         demo = os.path.join(ROOT, 'config', 'demo-courses.json')
         saved, semester.COURSES_JSON = semester.COURSES_JSON, demo
         semester._cache.clear()
+        saved_link = bs._cli.link_3d
+        bs._cli.link_3d = True          # 线上那份带 3D 入口
         try:
             expected = bs.render(bs.build_data())
         finally:
             semester.COURSES_JSON = saved
             semester._cache.clear()
+            bs._cli.link_3d = saved_link
 
         if actual != expected:
             self.fail('docs/index.html 与当前代码构建结果不一致。\n'

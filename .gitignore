@@ -10,3 +10,6 @@ output/
 # 调课记录属个人数据，只在本地，不提交
 config/overrides.json
 config/overrides.json.tmp
+
+# 3D 页的构建依赖（three / esbuild），不提交
+web3d/node_modules/

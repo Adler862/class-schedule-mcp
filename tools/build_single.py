@@ -38,6 +38,8 @@ def parse_args(argv=None):
     p.add_argument('--courses', help='课表 JSON 路径（默认 config/courses.json）')
     p.add_argument('--out', help='输出文件路径（默认 dist/课表助手.html）')
     p.add_argument('--date', help='把哪天当作今天，YYYY-MM-DD（默认系统日期）')
+    p.add_argument('--link-3d', action='store_true', dest='link_3d',
+                   help='在页脚加一个指向 3d.html 的入口（只有和 3d.html 同目录时才有意义）')
     return p.parse_args(argv)
 
 
@@ -119,7 +121,10 @@ def render(payload):
     with open(tpl_path, 'r', encoding='utf-8') as f:
         tpl = f.read()
     blob = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
-    return tpl.replace('/*__DATA__*/null', blob)
+    html = tpl.replace('/*__DATA__*/null', blob)
+    link = ('<br><a href="3d.html" style="color:var(--accent)">'
+            '看看 3D 档案版 →</a>') if _cli.link_3d else ''
+    return html.replace('<!--LINK3D-->', link)
 
 
 def main():

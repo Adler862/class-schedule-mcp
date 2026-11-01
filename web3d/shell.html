@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>课程档案库 · 3D 课表</title>
+<style>
+  :root{color-scheme:light;--paper:#e8e5e1;--card:#f2efe9;--ink:#151713;--muted:#6f6c64;--copper:#a67d48}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);
+    font-family:-apple-system,"MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+  #stage{display:block;width:100%;height:100%;touch-action:none;outline:none}
+  #ui{position:fixed;inset:0;pointer-events:none;user-select:none}
+  .corner{position:absolute;width:24px;height:24px;border-color:rgba(111,108,100,.48);border-style:solid}
+  .corner.tl{left:18px;top:18px;border-width:1px 0 0 1px}.corner.tr{right:18px;top:18px;border-width:1px 1px 0 0}
+  .corner.bl{left:18px;bottom:18px;border-width:0 0 1px 1px}.corner.br{right:18px;bottom:18px;border-width:0 1px 1px 0}
+  .masthead{position:absolute;left:42px;top:35px}
+  .eyebrow,.micro{font-size:10px;line-height:1.5;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
+  .masthead h1{margin:5px 0 3px;font-size:23px;line-height:1.1;font-weight:650;letter-spacing:2px}
+  .masthead .sub{font-size:11px;letter-spacing:2.6px;color:var(--muted)}
+  .meta{position:absolute;right:42px;top:39px;text-align:right;width:max-content;max-width:330px}
+  #student{font-size:12px;font-weight:550;line-height:1.6;letter-spacing:1.2px;margin-bottom:3px;white-space:nowrap}
+  #semester{font-size:10px;line-height:1.7;letter-spacing:1.6px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .hover-info{position:absolute;left:42px;top:137px;padding-left:13px;border-left:2px solid var(--copper);max-width:280px}
+  #hover-main{font-size:12px;line-height:1.6;letter-spacing:.5px}
+  #hover-sub{font-size:10px;line-height:1.7;letter-spacing:1.1px;color:var(--muted);margin-top:2px}
+  .axis{position:absolute;inset:0;overflow:hidden;z-index:1}
+  .day-label{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:10px;letter-spacing:1.6px;color:var(--muted)}
+  .day-label::after{content:"";display:block;width:1px;height:9px;background:rgba(166,125,72,.6);margin:7px auto 0}
+  .period-label{position:absolute;transform:translate(-100%,-50%);white-space:nowrap;text-align:right;color:var(--muted);padding-right:10px}
+  .period-label span{display:block;font-size:10px;line-height:1.35;letter-spacing:1.2px}
+  .period-label small{display:block;font-size:9px;line-height:1.4;letter-spacing:.6px;opacity:.82}
+  .footer{position:absolute;left:42px;bottom:36px;display:flex;align-items:center;gap:18px}
+  .footer .index{font-size:14px;font-weight:500;letter-spacing:.6px;color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .footer .rule{height:1px;width:52px;background:rgba(111,108,100,.45)}
+  .footer .hint{font-size:9px;letter-spacing:1.4px;color:var(--muted)}
+  .close-wrap{position:absolute;right:42px;bottom:35px;display:flex;align-items:center;gap:14px;
+    opacity:0;visibility:hidden;transform:translateY(8px);transition:opacity .2s ease,transform .2s ease,visibility .2s}
+  body.is-open .close-wrap{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto}
+  .close-wrap .esc{font-size:9px;letter-spacing:1.5px;color:var(--muted)}
+  #close-file{appearance:none;border:1px solid var(--copper);background:var(--card);color:var(--ink);
+    padding:10px 18px;font:500 11px/1 -apple-system,"MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    letter-spacing:1.6px;cursor:pointer}
+  #close-file:hover{background:#fff;outline:none}#close-file:focus-visible{outline:2px solid var(--copper);outline-offset:3px}
+  @media(max-width:600px){
+    .corner{width:16px;height:16px}.corner.tl{left:10px;top:10px}.corner.tr{right:10px;top:10px}
+    .corner.bl{left:10px;bottom:10px}.corner.br{right:10px;bottom:10px}
+    .masthead{left:24px;top:24px}.masthead h1{font-size:18px}.masthead .sub{font-size:9px}
+    .meta{right:24px;top:27px}#student{font-size:10px;letter-spacing:.5px}#semester{font-size:9px;line-height:1.5;letter-spacing:.8px}
+    .hover-info{left:24px;top:105px;max-width:230px}#hover-main{font-size:11px}
+    .day-label{font-size:8px;letter-spacing:.5px}.day-label::after{height:5px;margin-top:4px}
+    .period-label{padding-right:5px}.period-label span{font-size:8px}.period-label small{font-size:7px}
+    .footer{left:24px;bottom:26px;gap:10px}.footer .index{font-size:11px}.footer .rule{width:24px}.footer .hint{font-size:8px;letter-spacing:.7px}
+    .close-wrap{right:24px;bottom:25px}.close-wrap .esc{display:none}#close-file{padding:9px 13px;font-size:10px}
+  }
+  @media(prefers-reduced-motion:reduce){.close-wrap{transition:none}}
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="可交互的三维课表档案阵面"></canvas>
+<div id="ui">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <header class="masthead">
+    <div class="eyebrow">COURSE ARCHIVE / INTERNAL DATABASE</div>
+    <h1>课程档案库</h1>
+    <div class="sub">COURSE ARCHIVE · 课表索引</div>
+  </header>
+  <div class="meta"><div id="student"></div><div id="semester"></div></div>
+  <div class="hover-info" aria-live="polite">
+    <div id="hover-main">选择一根档案脊</div>
+    <div id="hover-sub">点击展开课程档案</div>
+  </div>
+  <div class="axis" aria-hidden="true">
+    <div class="day-label">周一</div><div class="day-label">周二</div><div class="day-label">周三</div>
+    <div class="day-label">周四</div><div class="day-label">周五</div><div class="day-label">周六</div><div class="day-label">周日</div>
+    <div class="period-label"></div><div class="period-label"></div><div class="period-label"></div>
+    <div class="period-label"></div><div class="period-label"></div><div class="period-label"></div>
+  </div>
+  <div class="footer"><span class="index">7 天 × 6 大节 · 共 0 门课</span><span class="rule"></span><span class="hint">ARCHIVE / SELECT · 点击档案脊以读取</span></div>
+  <div class="close-wrap"><span class="esc">ESC TO RETURN</span><button id="close-file" type="button" tabindex="-1" aria-hidden="true">关闭档案</button></div>
+</div>
+<script>window.DATA = /*__DATA__*/null;</script>
+<script>/*__BUNDLE__*/</script>
+</body>
+</html>

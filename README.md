@@ -121,6 +121,28 @@ python tools/build_single.py --courses config/mine.json --out dist/我的课表.
 解析器复用自微信小程序项目 `WXClassTable` 的 `tools/convert_xls.py`，这里只加了
 `--out` / `--start` / `--mask-teacher` 三个参数，解析逻辑没动。
 
+## 3D 档案版
+
+在线看：<https://adler862.github.io/class-schedule-mcp/3d.html>
+
+一排立着的白色薄片是档案脊，7 列 × 6 行对应一周六天... 对应七天与六个大节；
+有课的槽位是高脊并带一枚低饱和色标，没课的只剩一条矮刻痕——扫一眼就知道哪天有空。
+点一根脊，它会从阵列里被抽出来、抬向观者、摊平成一张可读的课程卡。
+
+```bash
+cd web3d
+npm install          # three + esbuild，仅构建时需要
+npm run build        # → ../docs/3d.html（约 550 KB 单文件）
+```
+
+**为什么要打包**：`three` 从 r160 起不再提供 UMD 构建，只有 ES module；而 `file://` 下
+`import` 会被 CORS 拦掉。所以用 esbuild 打成一个 IIFE 内联进 HTML，双击也能用。
+
+课表数据在**构建时**注入（`window.DATA`），运行时零请求。改完 `config/demo-courses.json`
+要重新 `npm run build`。
+
+体积代价：主站 93 KB，3D 版 550 KB。所以 3D 是独立页面，主页绝不加载它。
+
 ## 架构
 
 ```
