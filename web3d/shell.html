@@ -10,13 +10,21 @@
     margin:0;height:100%;overflow:hidden;
     background:#e8e5e1;color:#151713;
     font-family:-apple-system,"MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
   }
   #stage{display:block;width:100%;height:100%}
 
-  .ui{position:fixed;inset:0;pointer-events:none;z-index:2;transition:opacity 300ms linear}
-  /* 面板展开时 HUD 退到背景：否则左下 09/17 和右下键位会贴着面板边缘，很乱 */
-  body.sheet-open .ui{opacity:.16}
+  .ui{position:fixed;inset:0;pointer-events:none;z-index:3}
   .ui a,.ui button{pointer-events:auto}
+  /* 面板展开时，底部计数/键位/右上索引都收掉——它们会和右侧档案页签抢同一块位置。
+     左上品牌保留，参考图里详情态标题也是一直在的。 */
+  .sel,.foot,.keys,.idx,#callout{transition:opacity 260ms linear}
+  body.sheet-open .sel,
+  body.sheet-open .foot,
+  body.sheet-open .keys,
+  body.sheet-open .idx,
+  body.sheet-open #callout{opacity:0}
+
   .tag{font-size:10px;letter-spacing:1.8px;color:#6f6c64}
   .num{font-variant-numeric:tabular-nums}
 
@@ -38,10 +46,27 @@
   .sel .n b{font-size:52px;font-weight:300;letter-spacing:-.02em}
   .sel .n s{text-decoration:none;font-size:13px;color:#8f8a80}
 
-  /* 底部中间 */
-  .foot{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);text-align:center}
-  .foot .col{font-size:10px;letter-spacing:1.8px;color:#6f6c64;margin-bottom:5px}
-  .foot .nm{font-size:12px;color:#151713;letter-spacing:.06em}
+  /* 底部中间：周次 + 一条会跟着轨道滚动的周次带 */
+  .foot{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);text-align:center}
+  .foot .col{font-size:10px;letter-spacing:1.8px;color:#6f6c64;margin-bottom:6px}
+  .foot .nm{font-size:12px;color:#151713;letter-spacing:.06em;margin-top:5px}
+  .strip{
+    width:min(380px, 52vw);height:17px;overflow:hidden;position:relative;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent);
+    mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent);
+  }
+  .stripIn{display:flex;will-change:transform}
+  .stripIn i{
+    flex:none;width:30px;text-align:center;font-style:normal;
+    font-size:10.5px;letter-spacing:.4px;color:#b3aca0;
+    font-variant-numeric:tabular-nums;transition:color 180ms linear;
+  }
+  .stripIn i::after{
+    content:"";display:block;height:1px;width:0;margin:3px auto 0;
+    background:currentColor;transition:width 220ms cubic-bezier(.22,1,.36,1);
+  }
+  .stripIn i.on{color:#151713}
+  .stripIn i.on::after{width:13px}
 
   /* 右下键位 */
   .keys{position:absolute;right:26px;bottom:24px;display:flex;gap:10px;align-items:center;
@@ -88,121 +113,223 @@
   }
   #callout .act button:hover{color:#a67d48;border-color:#a67d48}
 
-
-  /* ---------- 周档案面板 ----------
-     点「打开课表」原地弹出，不再整页跳转到 index.html 重载。
-     transform+opacity 走 GPU，行内容按 --i 逐条错开淡入。 */
-  .scrim{
-    position:fixed;inset:0;z-index:20;background:rgba(21,23,19,.26);
-    opacity:0;pointer-events:none;transition:opacity 220ms linear;
+  /* ================= 周档案页签 =================
+     不是"从下面推上来一块板"，而是像参考图那样：右侧整片纸面先浮出来，
+     模型被这片纸吃掉，然后文字逐行落位。
+     两层：.shade 负责纸面渐变，.pane 负责内容。 */
+  .shade{
+    position:fixed;inset:0;z-index:19;pointer-events:none;
+    opacity:0;transition:opacity 360ms linear;
+    background:linear-gradient(90deg,
+      rgba(232,229,225,0) 33%,
+      rgba(232,229,225,.14) 45%,
+      rgba(232,229,225,.62) 51%,
+      rgba(232,229,225,.95) 56%,
+      #e8e5e1 61%);
   }
-  .scrim.show{opacity:1;pointer-events:auto}
+  body.sheet-open .shade{opacity:1}
 
-  .wsheet{
-    position:fixed;left:0;right:0;bottom:0;z-index:21;
-    max-width:740px;margin:0 auto;max-height:min(84vh,660px);
+  .pane{
+    position:fixed;top:0;right:0;bottom:0;z-index:21;
+    width:clamp(440px,46vw,720px);
     display:flex;flex-direction:column;
-    background:#f4f1ea;color:#151713;
-    border-top:1px solid #151713;
-    transform:translateY(102%);
-    transition:transform 340ms cubic-bezier(.22,1,.36,1);
-    will-change:transform;
+    pointer-events:none;
+    /* 关着时必须真的看不见：内容块的入场动画只负责"落位"，
+       可见性由这一层的 opacity 决定，否则关掉后页签会幽灵一样浮在场景上。 */
+    opacity:0;transform:translateX(26px);
+    transition:opacity 280ms linear,transform 560ms cubic-bezier(.22,1,.36,1);
   }
-  .wsheet.show{transform:translateY(0)}
+  body.sheet-open .pane{opacity:1;transform:none}
+  body:not(.sheet-open) .pin{pointer-events:none}
+  .pin{
+    flex:1;min-height:0;display:flex;flex-direction:column;
+    padding:74px clamp(28px,3.2vw,54px) calc(20px + env(safe-area-inset-bottom))
+            clamp(26px,3vw,44px);
+    pointer-events:auto;
+  }
+  /* 内容期间位移由 JS 逐块 animate，这里只给个兜底初始态 */
+  .pin > *{will-change:transform,opacity}
 
-  .wtop{
-    display:flex;align-items:baseline;gap:12px;
-    padding:15px 18px 12px;border-bottom:1px solid #bdb8ad;position:relative;
+  .kicker{
+    display:flex;justify-content:space-between;align-items:baseline;
+    font-size:10.5px;letter-spacing:1.5px;font-variant-numeric:tabular-nums;
   }
-  .wtop .tag{font-size:10px;letter-spacing:1.8px;color:#6f6c64}
-  .wtop .num{
-    font-size:26px;font-weight:300;line-height:1;letter-spacing:-.01em;
+  .kicker span:last-child{font-size:9px;letter-spacing:1.2px;color:#8b8578}
+
+  .pane h2{
+    margin:24px 0 10px;font-weight:600;
+    font-size:clamp(28px,3vw,40px);line-height:1.1;letter-spacing:-1.2px;
     font-variant-numeric:tabular-nums;
   }
-  .wtop .num s{text-decoration:none;font-size:13px;color:#8f8a80;margin-left:6px}
-  .wtop .rng{margin-left:auto;font-size:11px;letter-spacing:1.1px;color:#6f6c64;
-    font-variant-numeric:tabular-nums;padding-right:44px}
-  .wx{
-    position:absolute;top:12px;right:12px;width:36px;height:36px;
-    display:grid;place-items:center;border:1px solid #bdb8ad;background:none;
-    color:#151713;cursor:pointer;
-  }
-  .wx:hover{background:#151713;color:#f4f1ea;border-color:#151713}
-  .wx svg{width:12px;height:12px}
+  .cnline{display:flex;align-items:center;gap:16px;font-size:12.5px;letter-spacing:.02em}
+  .cnline span:last-child{font-size:10px;color:#8b8578;letter-spacing:1.2px}
 
-  .wbody{overflow:auto;padding:2px 18px 20px;overscroll-behavior:contain}
+  .rule{height:2px;background:#20221d;margin-top:20px;transform-origin:left center}
+
+  .meta{
+    display:grid;grid-template-columns:1fr 1fr;gap:18px 28px;
+    margin:22px 0 20px;padding:0;
+  }
+  .meta div{min-width:0}
+  .meta dt{font-size:9px;letter-spacing:.8px;color:#807b70;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .meta dd{margin:7px 0 0;font-size:13px;letter-spacing:.01em;
+    display:flex;align-items:center;gap:7px;min-width:0}
+  .meta dd i{flex:none;width:5px;height:5px;background:#8b8f75;display:inline-block}
+  .meta dd b{font-weight:500}
+  .meta dd em{font-style:normal;color:#8b8578;font-size:11px}
+
+  /* 页签 */
+  .tabs{position:relative;display:flex;gap:clamp(18px,2.4vw,32px);
+    border-bottom:1px solid #bdb8ad;flex:none}
+  .tabs button{
+    font:inherit;background:none;border:0;cursor:pointer;padding:0 0 12px;
+    font-size:10px;letter-spacing:1.2px;color:#989184;position:relative;
+  }
+  .tabs button span{font-size:12px;letter-spacing:.02em;margin-left:6px}
+  .tabs button.active{color:#191c16}
+  .tabs button:hover{color:#5a584e}
+  .tabs .ind{
+    position:absolute;bottom:-1px;left:0;width:1px;height:2px;background:#25281e;
+    transform-origin:left center;transition:transform 220ms cubic-bezier(.22,1,.36,1);
+  }
+
+  .tbody{flex:1;min-height:0;overflow:auto;padding:14px 0 4px;overscroll-behavior:contain;
+    scrollbar-width:thin;scrollbar-color:#c3bcae transparent}
+  .tbody::-webkit-scrollbar{width:6px;height:6px}
+  .tbody::-webkit-scrollbar-thumb{background:#c9c3b6}
+  .tabp{display:none}
+  .tabp.on{display:block}
 
   /* ---------- 课表网格 ----------
-     面板里要的是"正常课表"：7 列星期 × 6 大节，不是按天罗列的清单。
-     用 CSS Grid，x 轴自动流；课程块用 grid-row span 跨大节（3-4 节的课占两行）。 */
-  .twrap{overflow:auto;-webkit-overflow-scrolling:touch;padding:0 0 2px}
-
+     参考图里的详情区是"排版物"，所以网格要更接近印刷表格：
+     极细的框线、等宽的节次列、课程块只留一条左侧色条。 */
+  .twrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .tgrid{
-    display:grid;
-    grid-template-columns:42px repeat(7, minmax(0,1fr));
-    gap:1px;background:#cdc7ba;border:1px solid #cdc7ba;
-    min-width:560px;
+    display:grid;grid-template-columns:36px repeat(7,minmax(0,1fr));
+    gap:1px;background:#cdc7ba;border:1px solid #cdc7ba;min-width:420px;
   }
-
   .tgrid .th{
-    background:#e9e4da;padding:6px 1px 5px;text-align:center;
-    font-size:10px;letter-spacing:.4px;color:#151713;line-height:1.2;
+    background:#e9e4da;padding:7px 1px 6px;text-align:center;
+    font-size:10px;letter-spacing:.2px;color:#151713;line-height:1.2;
   }
-  .tgrid .th em{display:block;font-style:normal;font-size:8.5px;color:#8f8a80;margin-top:2px;
-    font-variant-numeric:tabular-nums}
-  .tgrid .th.blank{background:#e9e4da}
-
-  .tgrid .gt{
-    background:#e9e4da;text-align:center;padding:6px 1px 0;line-height:1.2;
-  }
-  .tgrid .gt b{display:block;font-size:9.5px;font-weight:500;color:#151713;
-    font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .tgrid .th em{display:block;font-style:normal;font-size:8px;color:#8f8a80;margin-top:3px;
+    font-variant-numeric:tabular-nums;letter-spacing:0}
+  .tgrid .th.today{background:#ded7c8}
+  .tgrid .gt{background:#e9e4da;text-align:center;padding:7px 1px 0;line-height:1.2}
+  .tgrid .gt b{display:block;font-size:9px;font-weight:500;color:#151713;
+    font-variant-numeric:tabular-nums;letter-spacing:-.3px}
   .tgrid .gt span{display:block;font-size:7.5px;color:#8f8a80;margin-top:2px;
-    font-variant-numeric:tabular-nums}
-
-  .tgrid .cell{background:#f8f6f1;min-height:46px;position:relative}
-  .tgrid .cell.today{background:#f1ece1}
+    font-variant-numeric:tabular-nums;letter-spacing:-.1px}
+  .tempty{padding:0 0 12px;font-size:11px;color:#8f8a80;letter-spacing:1.4px}
+  .tgrid .cell{background:#f7f5f0;min-height:60px;position:relative}
+  .tgrid .cell.today{background:#f2ede2}
 
   .tgrid .cc{
-    position:relative;margin:2px;padding:3px 3px 3px 5px;overflow:hidden;
-    border-left:2px solid var(--c,#a8a294);
-    background:#fff;z-index:1;
+    position:relative;margin:2px;padding:4px 4px 4px 6px;overflow:hidden;
+    border-left:2px solid var(--c,#a8a294);background:#fff;z-index:1;
+    transition:background 160ms linear,box-shadow 160ms linear;
   }
+  .tgrid .cc:hover{background:#fdfcf9;box-shadow:0 1px 6px rgba(21,23,19,.1)}
   .tgrid .cc b{
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
-    font-size:9.5px;font-weight:500;line-height:1.22;color:#151713;letter-spacing:-.2px;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+    font-size:9.5px;font-weight:500;line-height:1.26;color:#151713;letter-spacing:-.2px;
   }
   .tgrid .cc i{
-    display:block;font-style:normal;font-size:8px;color:#8f8a80;margin-top:2px;
+    display:block;font-style:normal;font-size:8px;color:#8f8a80;margin-top:3px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
+  .tgrid .cc u{display:block;text-decoration:none;font-size:7.5px;color:#a8a294;
+    margin-top:1px;font-variant-numeric:tabular-nums;letter-spacing:.2px}
 
-  .tempty{padding:22px 0 26px;text-align:center;font-size:11.5px;color:#8f8a80;letter-spacing:1.2px}
+  /* 清单 */
+  .clist{margin:0;padding:0;list-style:none}
+  .clist li{display:flex;gap:14px;padding:11px 0;border-bottom:1px solid #e2ded7}
+  .clist .t{flex:none;width:64px;font-size:10.5px;color:#807b70;
+    font-variant-numeric:tabular-nums;letter-spacing:.2px;padding-top:2px}
+  .clist .n{flex:1;min-width:0}
+  .clist .n b{display:block;font-size:12.5px;font-weight:500;letter-spacing:.01em}
+  .clist .n span{display:block;font-size:10px;color:#8b8578;margin-top:3px}
+  .clist .d{flex:none;width:34px;font-size:9.5px;color:#a8a294;text-align:right;
+    padding-top:2px;letter-spacing:.6px}
+  .clist .bar{flex:none;width:2px;background:var(--c,#a8a294);margin:-2px 0}
 
-  /* 展开时逐行淡入，靠 --i 错开 */
-  .wsheet.show .tgrid .th,
-  .wsheet.show .tgrid .gt,
-  .wsheet.show .tgrid .cc{
-    animation:rowIn 320ms cubic-bezier(.22,1,.36,1) both;
-    animation-delay:calc(var(--i,0) * 12ms);
+  /* 概览 */
+  .stat{display:grid;grid-template-columns:1fr 1fr;gap:16px 28px;margin:2px 0 0}
+  .stat div{border-top:1px solid #e2ded7;padding-top:9px}
+  .stat span{display:block;font-size:9px;letter-spacing:.8px;color:#807b70}
+  .stat b{display:block;font-size:22px;font-weight:300;letter-spacing:-.6px;margin-top:4px;
+    font-variant-numeric:tabular-nums}
+  .stat b s{text-decoration:none;font-size:11px;color:#8f8a80;margin-left:4px;letter-spacing:0}
+  .statp{font-size:11.5px;line-height:1.85;color:#5a584e;margin:18px 0 0;text-align:justify}
+  .swd{display:flex;gap:5px;margin-top:14px;align-items:flex-end;height:44px}
+  .swd i{flex:1;background:#ded7c8;position:relative;min-height:3px}
+  .swd i b{position:absolute;left:0;right:0;bottom:0;background:#8b8f75}
+  .swd em{font-style:normal;font-size:8.5px;color:#9a9487;display:block;text-align:center;
+    margin-top:5px}
+
+  /* 底部操作 */
+  .acts{display:flex;align-items:center;gap:clamp(14px,2vw,30px);margin-top:16px;flex:none}
+  .solid{
+    flex:1;height:46px;background:#252820;color:#f0eee5;text-decoration:none;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 16px;font-size:11px;letter-spacing:1px;
+    transition:background 200ms linear;
+  }
+  .solid em{font-style:normal;font-size:10px;color:#bcbfb1;letter-spacing:1.2px}
+  .solid:hover{background:#4b4a3b}
+  .export{
+    font:inherit;background:none;border:0;cursor:pointer;color:#151713;
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:11px;letter-spacing:1px;min-height:46px;width:clamp(78px,9vw,104px);
+  }
+  .export span{font-size:19px;line-height:1}
+  .export:hover{color:#946b3c}
+  .fnote{
+    display:flex;justify-content:space-between;margin-top:14px;flex:none;
+    font-size:8.5px;letter-spacing:.7px;color:#9a9487;
+    font-variant-numeric:tabular-nums;
   }
 
-  .wfoot{
-    padding:10px 18px calc(12px + env(safe-area-inset-bottom));
-    border-top:1px solid #e2ded7;
+  /* 左半边的档案题注（参考图 NO.001 / INTERNAL DATABASE） */
+  .layer{position:fixed;inset:0;z-index:22;pointer-events:none;
+    opacity:0;transition:opacity 300ms linear}
+  body.sheet-open .layer{opacity:1}
+  .back{
+    position:absolute;left:clamp(24px,3vw,44px);top:136px;
+    display:flex;align-items:center;gap:14px;pointer-events:auto;
+    font:inherit;background:none;border:0;cursor:pointer;color:#151713;
+    opacity:0;transform:translateX(-8px);
   }
-  .wfoot a{
-    font-size:10px;letter-spacing:1.6px;color:#6f6c64;text-decoration:none;
-    border-bottom:1px solid #bdb8ad;padding-bottom:1px;
-  }
-  .wfoot a:hover{color:#a67d48;border-color:#a67d48}
+  body.sheet-open .back{opacity:1;transform:none;
+    transition:opacity 320ms linear 140ms,transform 460ms cubic-bezier(.22,1,.36,1) 140ms}
+  .back:hover{color:#946b3c}
+  .back .arw{font-size:17px;line-height:1}
+  .back .lbl{font-size:10.5px;letter-spacing:1.6px}
+  .back kbd{font:inherit;font-size:9px;letter-spacing:1px;color:#8b8578;
+    border:1px solid #bdb8ad;padding:3px 5px}
+  .cap{position:absolute;left:clamp(24px,3vw,44px);bottom:84px;opacity:0}
+  body.sheet-open .cap{opacity:1;transition:opacity 380ms linear 200ms}
+  .cap b{display:block;font-size:34px;font-weight:300;letter-spacing:-.6px;line-height:1;
+    font-variant-numeric:tabular-nums}
+  .cap span{display:block;font-size:9.5px;letter-spacing:1.9px;color:#76736a;margin-top:9px}
+  .cap em{display:block;font-style:normal;font-size:9px;letter-spacing:1.2px;color:#817b70;
+    margin-top:26px;font-variant-numeric:tabular-nums}
+
+  /* 截图/打印用的静止态：headless 下 CSS transition 不会推进，
+     只能靠这个类把所有过渡直接关掉，否则拍到的永远是第 0 帧。 */
+  body.still, body.still *{transition:none !important;animation:none !important}
 
   @media (prefers-reduced-motion:reduce){
-    .wsheet{transition:none}
-    .scrim{transition:none}
-    .wsheet.show .wrow{animation:none}
+    .shade{transition:none}
+    .tabs .ind{transition:none}
   }
 
+  @media (max-width:900px){
+    .pane{width:min(100%,620px)}
+    .pin{padding-top:64px}
+    .meta{gap:14px 20px}
+  }
   @media (max-width:560px){
     .brand h1{font-size:17px}
     .brand p{display:none}
@@ -211,6 +338,12 @@
     #callout .line{width:180px}
     #callout .act .line2{width:96px}
     .keys{display:none}
+    .pane{width:100%}
+    .pin{padding:56px 18px calc(14px + env(safe-area-inset-bottom))}
+    .meta{grid-template-columns:1fr 1fr}
+    .tgrid{min-width:400px}
+    .back{top:88px}
+    .cap{bottom:64px}
   }
 </style>
 </head>
@@ -235,6 +368,7 @@
 
   <div class="foot">
     <div class="col">WEEK <b id="colNum">09</b> <span id="colTotal">/ 17</span></div>
+    <div class="strip" id="strip"><div class="stripIn" id="stripIn"></div></div>
     <div class="nm" id="slotName">第 9 周</div>
   </div>
 
@@ -256,20 +390,64 @@
   </div>
 </div>
 
-<div class="scrim" id="wsScrim"></div>
+<!-- 纸面：模型在这里被"吃掉"，右侧才浮出可读的版面 -->
+<div class="shade" id="wsShade"></div>
 
-<section class="wsheet" id="wsheet" role="dialog" aria-modal="true" aria-label="本周课表">
-  <div class="wtop">
-    <span class="tag">WEEK</span>
-    <span class="num" id="wsNum">09<s id="wsAll">/ 17</s></span>
-    <span class="rng" id="wsRange">10/26 – 11/01</span>
-    <button class="wx" id="wsClose" type="button" aria-label="关闭">
-      <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg>
-    </button>
+<!-- 左半边：返回 + 档案题注 -->
+<div class="layer">
+  <button class="back" id="wsBack" type="button">
+    <span class="arw">←</span><span class="lbl">返回档案架</span><kbd>ESC</kbd>
+  </button>
+  <div class="cap">
+    <b id="capNum">NO.009</b>
+    <span>INTERNAL DATABASE</span>
+    <em id="capMeta">WEEK 09 · 00 SECTIONS</em>
   </div>
-  <div class="wbody" id="wsBody"><div class="twrap" id="wsGrid"></div></div>
-  <div class="wfoot"><a href="index.html" id="wsFull">在表格里看完整学期 →</a></div>
-</section>
+</div>
+
+<aside class="pane" id="wsheet" role="dialog" aria-modal="true" aria-label="本周课表">
+  <div class="pin" id="wsPin">
+    <div class="kicker">
+      <span id="wsFile">FILE W-009</span>
+      <span id="wsArea">TIMETABLE AREA</span>
+    </div>
+
+    <h2 id="wsTitle">第 09 周</h2>
+    <div class="cnline">
+      <span id="wsRange">10/26 – 11/01</span>
+      <span id="wsCat">常规教学周</span>
+    </div>
+
+    <div class="rule" id="wsRule"></div>
+
+    <dl class="meta" id="wsMeta"></dl>
+
+    <div class="tabs" role="tablist" id="wsTabs">
+      <button type="button" class="active" role="tab" data-tab="grid" aria-selected="true">01<span>课表</span></button>
+      <button type="button" role="tab" data-tab="list" aria-selected="false">02<span>清单</span></button>
+      <button type="button" role="tab" data-tab="stat" aria-selected="false">03<span>概览</span></button>
+      <i class="ind" aria-hidden="true"></i>
+    </div>
+
+    <div class="tbody" id="wsBody">
+      <div class="tabp on" data-p="grid"><div class="twrap" id="wsGrid"></div></div>
+      <div class="tabp" data-p="list"><ul class="clist" id="wsList"></ul></div>
+      <div class="tabp" data-p="stat" id="wsStat"></div>
+    </div>
+
+    <div class="acts">
+      <a class="solid" id="wsFull" href="index.html">
+        <span>－ 在完整学期表格中查看</span><em>OPEN</em>
+      </a>
+      <button class="export" id="wsExport" type="button">EXPORT <span>↓</span></button>
+    </div>
+
+    <div class="fnote">
+      <span id="wsSource">SOURCE / 教务系统导出 · 已脱敏</span>
+      <span id="wsCount">009 / 017</span>
+    </div>
+  </div>
+</aside>
 
 <script>window.DATA = /*__DATA__*/null;</script>
 <script>/*__BUNDLE__*/</script>
