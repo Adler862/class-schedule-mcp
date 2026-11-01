@@ -12,10 +12,12 @@ const LIFT = 1.15;
 
 /* 抽出后的状态：往前拉、转正、缩小、停在左侧 */
 const EX = {
-  pull: 5.0,        // 沿 +z 拉到排面之前，转的时候才不会扫到邻居
-  y: 1.62,          // 抽出后的中心高度（大致对准画面中线）
-  scale: 0.46,
-  tilt: 0.26,       // 转过 90° 后再偏一点，露出厚度，不然像一张纯平面
+  rise: 2.0,        // 从上方拔出：先抬到邻居脊顶之上，再转身，不会扫到别人
+  y: 1.62,          // 落定后的中心高度（大致对准画面中线）
+  scale: 0.44,
+  /* 转到"差 35° 才正对"就停：真的转满 90° 会变成贴在屏幕上的一根横条，
+     留出这 35°，长边仍有纵深、厚度也露出来，才像一件立体的东西。 */
+  tilt: 0.60,
 };
 
 if (/[?&]still=1/.test(location.search)) document.body.classList.add('still');
@@ -386,7 +388,7 @@ let focusRail = null;
 /* 轨道位置（列单位，带小数）——缓动到 selected，所以柱子是连续滑过去的 */
 let railScroll = 0;
 /* 焦点横坐标：关着时居中，打开时左移，整条轨道跟着让位。 */
-const FOCUS_CLOSED = 0.30, FOCUS_OPEN = -2.28;
+const FOCUS_CLOSED = 0.30, FOCUS_OPEN = -1.55;
 let focusX = FOCUS_CLOSED;
 
 /* ---------- 交互 ---------- */
@@ -789,7 +791,8 @@ resize();
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let last = performance.now();
 
-/* 抽出后板子要正对观者：绕 y 转到 +x 面朝相机，再偏 tilt 露出厚度。 */
+/* 抽出后板子要正对观者：绕 y 转到 +x 面朝相机，但少转 tilt 那么多，
+   留出一点斜角，免得拍成一张纯平面的横条。 */
 const FACE_ROT = Math.atan2(
   camera.position.x - FOCUS_OPEN, camera.position.z
 ) - Math.PI / 2 + EX.tilt - group.rotation.y;
@@ -845,14 +848,16 @@ function tick(now) {
     r.ex += (exTarget - r.ex) * Math.min(1, dt * (reduce ? 40 : 5.2));
 
     const e = clamp01(r.ex);
-    const e1 = smooth(clamp01(e / 0.55));                 // 先往前拉
-    const e2 = smooth(clamp01((e - 0.28) / 0.72));        // 再转正 + 缩小
-    const py = r.baseY + LIFT * r.lift * (1 - e2) + (EX.y - r.baseY) * e2;
+    const e1 = smooth(clamp01(e / 0.5));                  // 先从上方拔出
+    const e2 = smooth(clamp01((e - 0.34) / 0.66));        // 再转身 + 缩小 + 落位
+    /* 拔起然后再落回来：拔的那一段完全退掉，不叠加到最终高度上 */
+    const py = r.baseY + LIFT * r.lift * (1 - e2)
+      + EX.rise * e1 * (1 - e2) + (EX.y - r.baseY) * e2;
     const sc = 1 + (EX.scale - 1) * e2;
 
-    /* 只有第 0 排会抬、会抽、会转；后排是背景，跟着横向滑动就够 */
+    /* 只有第 0 排会抬、会拔、会转；后排是背景，跟着横向滑动就够 */
     const front = r.holders[0];
-    front.position.set(r.x, py, EX.pull * e1);
+    front.position.set(r.x, py, 0);
     front.rotation.y = FACE_ROT * e2;
     front.scale.setScalar(sc);
     /* 标签跟着抽出进度淡入，收回去时一起消失 */
@@ -865,7 +870,7 @@ function tick(now) {
 
   /* 面板打开时略收窄视野（长焦再拉一点），不再动 position：
      透视相机下改 position.z 会同时改变距离和视线方向，阵列会整体跑偏。 */
-  const fovTarget = sheetOpen ? 7.8 : 8.4;
+  const fovTarget = sheetOpen ? 7.4 : 8.4;
   if (Math.abs(camera.fov - fovTarget) > 0.005) {
     camera.fov += (fovTarget - camera.fov) * Math.min(1, dt * 8);
     camera.updateProjectionMatrix();
