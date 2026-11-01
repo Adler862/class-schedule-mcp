@@ -51,7 +51,13 @@ const payload = {
   courses,
   start,
   maxWeek,
-  periodTimes: {},
+  // 作息表：面板要显示「08:30」这种时刻，而课程数据里只有节次。
+  // 与 src/semester.py 的 DEFAULT_PERIOD_TIMES 保持一致，config/timetable.json 可覆盖。
+  periodTimes: {
+    1: '08:30', 2: '09:25', 3: '10:30', 4: '11:25',
+    5: '14:30', 6: '15:25', 7: '16:30', 8: '17:25',
+    9: '19:00', 10: '19:55', 11: '21:00', 12: '21:55',
+  },
 };
 // 作息表从 config/timetable.json 读，没有就用默认
 try {

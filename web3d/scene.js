@@ -194,6 +194,10 @@ function idleBreath(i, time) {
 
 let selectedAt = 0;                 // 上次选中的时刻，用来算波纹年龄
 let selected = Math.max(0, Math.min(slots.length - 1, currentWeek() - 1));
+/* 面板状态要在这里声明：select() 会读它，而 select 定义在上面。
+   放在 select 之后会形成 TDZ，任何在模块执行期调用 select 的改动都会直接抛错。 */
+let sheetOpen = false;
+let lastSheetWeek = 0;
 let hovered = -1;
 
 /* ---------- 交互 ---------- */
@@ -227,6 +231,11 @@ function select(i) {
   if (next !== selected) selectedAt = performance.now() / 1000;
   selected = next;
   paintOverlay();
+  /* 面板开着时切周，内容必须跟着换——否则引线指向第 10 周、面板还是第 9 周。
+     注意 next 是数组下标（0 基），lastSheetWeek 是周次（1 基），必须 +1 再比，
+     否则永远差 1，面板会慢一拍。 */
+  const nextWeek = next + 1;
+  if (sheetOpen && nextWeek !== lastSheetWeek) openWeekSheet(nextWeek);
 }
 
 addEventListener('keydown', (ev) => {
@@ -263,9 +272,83 @@ function paintOverlay() {
   const names = new Set(list.map(c => c.name));
   setText('callRange', rangeOf(s.week) + ' · ' + names.size + ' 门课 / ' + list.length + ' 节');
   setText('callCount', list.length ? list.length + ' SECTIONS' : 'NO CLASS');
-  const a = E('callLink');
-  if (a) a.href = 'index.html?w=' + s.week;
+  /* 面板内容由 openWeekSheet(week) 现取，这里不需要预写链接 */
 }
+
+/* ---------- 周档案面板 ----------
+   点「打开课表」原地展开，不再整页跳到 index.html 重载。
+   之前是 <a href>，点一下整个 WebGL 场景重新初始化，所以那一瞬间必然是白的。 */
+const DAY_NAMES = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+function openWeekSheet(week) {
+  const list = weekCourses(week).slice();
+  list.sort((a, b) => (a.day - b.day) || (a.startPeriod - b.startPeriod));
+
+  const body = E('wsBody');
+  E('wsNum').innerHTML = pad2(week) + '<s id="wsAll">/ ' + pad2(maxWeek) + '</s>';
+  E('wsRange').textContent = rangeOf(week) + ' · ' + list.length + ' 节';
+  if (E('wsFull')) E('wsFull').href = 'index.html?w=' + week;
+
+  if (!list.length) {
+    body.innerHTML = '<div class="wempty">这一周没有排课</div>';
+  } else {
+    let html = '';
+    let idx = 0;
+    let lastDay = 0;
+    for (const c of list) {
+      if (c.day !== lastDay) {
+        if (lastDay) html += '</div>';
+        lastDay = c.day;
+        const d = isoOf(week, c.day);
+        html += '<div class="wday"><h4><b>' + DAY_NAMES[c.day] + '</b>'
+              + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()) + '</h4>';
+      }
+      const t = (DATA.periodTimes && DATA.periodTimes[c.startPeriod]) || '';
+      const where = c.room || c.location || '';
+      html += '<div class="wrow" style="--i:' + (idx++) + '">'
+            + '<span class="tm">' + t + '</span>'
+            + '<span class="nm">' + c.name
+            + '<em>' + c.startPeriod + '-' + c.endPeriod + ' 节'
+            + (c.teacher ? '　' + c.teacher : '') + '</em></span>'
+            + '<span class="mt">' + where + '</span>'
+            + '</div>';
+    }
+    if (lastDay) html += '</div>';
+    body.innerHTML = html;
+  }
+
+  E('wsScrim').classList.add('show');
+  E('wsheet').classList.add('show');
+  document.body.classList.add('sheet-open');
+  E('callLink').textContent = '收起 ↑';
+  sheetOpen = true;
+  lastSheetWeek = week;
+  body.scrollTop = 0;
+}
+
+function closeWeekSheet() {
+  if (!sheetOpen) return;
+  E('wsScrim').classList.remove('show');
+  E('wsheet').classList.remove('show');
+  document.body.classList.remove('sheet-open');
+  E('callLink').textContent = '打开课表 →';
+  sheetOpen = false;
+  lastSheetWeek = 0;
+}
+
+E('callLink').addEventListener('click', ev => {
+  ev.stopPropagation();
+  if (sheetOpen) { closeWeekSheet(); return; }
+  openWeekSheet(slots[selected].week);
+});
+E('wsClose').addEventListener('click', closeWeekSheet);
+E('wsScrim').addEventListener('click', closeWeekSheet);
+
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape' && sheetOpen) { closeWeekSheet(); ev.stopPropagation(); }
+});
 
 /* ---------- 把选中脊顶投到屏幕，摆引线 ---------- */
 const v = new THREE.Vector3();
@@ -355,6 +438,13 @@ function tick(now) {
       mt.transparent = target < 0.999;
       mt.depthWrite = target > 0.96;
     }
+  }
+
+  /* 面板打开时场景略退，给底部面板让出层次感 */
+  const zoomTarget = sheetOpen ? 0.93 : 1;
+  if (Math.abs(camera.zoom - zoomTarget) > 0.001) {
+    camera.zoom += (zoomTarget - camera.zoom) * Math.min(1, dt * 8);
+    camera.updateProjectionMatrix();
   }
 
   camera.updateMatrixWorld();
