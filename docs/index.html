@@ -59,27 +59,67 @@
   }
   .ghost svg{width:16px;height:16px;flex:none}
   .ghost:hover{background:var(--fg);color:var(--bg)}
-  .weekbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin:0 0 10px}
-  .weeknav{grid-column:2;display:flex;align-items:center;gap:12px}
-  .weekbar .label{
-    min-width:290px;text-align:center;font-size:14px;font-weight:400;line-height:1.2;
-    white-space:nowrap;
-  }
-  .weekbar .label b{margin:0 4px;font-size:42px;font-weight:300;line-height:1;vertical-align:-3px}
-  .weekbar .label span{
-    margin-left:15px;color:var(--muted);font-size:11px;font-weight:400;letter-spacing:1.2px;
-  }
-  #thisWeek{grid-column:3;justify-self:end;min-height:34px;padding:6px 11px;font-size:11px;letter-spacing:1.7px}
+  .weekbar{display:flex;align-items:center;gap:8px;margin:0 0 12px}
+  #thisWeek{margin-left:auto;min-height:34px;padding:6px 12px;font-size:11px;letter-spacing:1.7px}
   .nav{
     display:grid;place-items:center;width:36px;height:36px;padding:0 0 2px;
     border:1px solid var(--line-strong);background:transparent;color:var(--fg);
     font-size:22px;font-weight:300;line-height:1;cursor:pointer;user-select:none;
   }
   .nav:hover{background:var(--fg);color:var(--bg)}
-  .week-ticks{display:flex;align-items:end;justify-content:center;gap:6px;height:15px;margin:0 0 18px}
-  .week-ticks i{display:block;width:2px;height:8px;background:var(--line)}
-  .week-ticks i.on{height:12px;background:var(--fg)}
-  .grid-frame{position:relative;margin:0 0 28px;padding:12px}
+  .week-ticks{
+    display:flex;align-items:flex-end;justify-content:flex-start;gap:5px;
+    height:22px;margin:0 2px 14px;
+  }
+  .week-ticks button{
+    position:relative;width:3px;height:9px;padding:0;border:0;cursor:pointer;
+    background:var(--line);transition:height 160ms var(--ease),background 160ms var(--ease);
+  }
+  .week-ticks button:hover{height:14px;background:var(--fg)}
+  .week-ticks button.on{height:17px;background:var(--fg)}
+  .week-ticks button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+  .week-ticks button::after{
+    content:attr(data-w);position:absolute;left:50%;bottom:calc(100% + 5px);
+    transform:translateX(-50%) translateY(2px);
+    font-size:9px;letter-spacing:1.2px;color:var(--muted);white-space:nowrap;
+    opacity:0;pointer-events:none;transition:opacity 140ms linear,transform 140ms var(--ease);
+    font-variant-numeric:tabular-nums;
+  }
+  .week-ticks button:hover::after{opacity:1;transform:translateX(-50%) translateY(0)}
+  .grid-frame{position:relative;margin:0 0 28px;padding:12px;
+    transform-style:preserve-3d;
+    transition:transform 380ms var(--ease),opacity 300ms var(--ease);
+  }
+  .grid-frame.depth{transform:perspective(1000px) translateZ(-70px) scale(.975);opacity:.5}
+
+  /* 封面抬头：档案夹脊背上的编号与日期 */
+  .folio{
+    display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:2px 2px 10px;margin:0 0 10px;
+    border-bottom:1px solid var(--line);
+  }
+  .folio-tag{font-size:10px;letter-spacing:2px;color:var(--muted)}
+  .folio .label{
+    display:flex;align-items:baseline;gap:6px;
+    font-size:12px;font-weight:400;line-height:1.1;white-space:nowrap;
+  }
+  .folio .label b{font-size:30px;font-weight:300;line-height:1;font-variant-numeric:tabular-nums}
+  .folio .label span{
+    color:var(--muted);font-size:11px;letter-spacing:1.2px;
+    font-variant-numeric:tabular-nums;
+  }
+  .folio-term{margin-left:auto;font-size:10px;letter-spacing:1.4px;color:var(--faint)}
+
+  /* 换档案：旧的一本沉下去，新的一本落进来 */
+  .grid-frame.swapout{animation:swapout 170ms var(--ease) forwards}
+  .grid-frame.swapin{animation:swapin 330ms var(--ease)}
+  @keyframes swapout{
+    to{transform:perspective(1000px) translateY(10px) translateZ(-120px) rotateX(-4deg);opacity:0}
+  }
+  @keyframes swapin{
+    from{transform:perspective(1000px) translateY(-14px) translateZ(-150px);opacity:0}
+    to{transform:none;opacity:1}
+  }
   .corner{position:absolute;width:14px;height:14px;pointer-events:none;color:var(--line-strong)}
   .corner.tl{top:0;left:0;border-top:1px solid;border-left:1px solid}
   .corner.tr{top:0;right:0;border-top:1px solid;border-right:1px solid}
@@ -185,15 +225,21 @@
   /* 抽出档案：真卡片飞出来的替身 */
   .drawn{
     position:fixed;z-index:60;margin:0;pointer-events:none;
-    transform-origin:center center;
-    transition:transform 420ms cubic-bezier(.2,.85,.25,1), opacity 240ms var(--ease);
+    display:flex;flex-direction:column;justify-content:center;gap:6px;
+    padding:22px 24px;box-sizing:border-box;
+    background:var(--surface);border:1px solid var(--line-strong);
+    box-shadow:none;
+    transition:transform 420ms cubic-bezier(.2,.85,.25,1), opacity 160ms linear;
     will-change:transform;
   }
-  .drawn.out{
-    transform:perspective(1000px) translate3d(var(--dx,0), var(--dy,0), 0)
-               translateZ(150px) rotateX(7deg) scale(var(--ds,1));
-  }
   .drawn.fade{ opacity:0; }
+  .dr-kicker{
+    display:flex;align-items:center;gap:8px;
+    font-size:10px;letter-spacing:1.7px;color:var(--muted);
+  }
+  .dr-no{margin-left:auto;font-variant-numeric:tabular-nums}
+  .dr-name{font-size:26px;font-weight:500;color:var(--fg);line-height:1.2;letter-spacing:-.2px}
+  .dr-meta{font-size:12px;color:var(--muted)}
 
   /* 抽出时整个网格往后退 */
   .grid.depth{
@@ -246,6 +292,10 @@
     white-space:nowrap;text-overflow:ellipsis;
   }
   .course .m .short{display:none}
+  .course .tc{
+    font-size:10px;color:var(--muted);line-height:1.25;letter-spacing:.2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
   /* 开始时刻已经由左侧节次列给出了，块里再显示一遍是重复信息 */
   .course .t{display:none}
   .course.moved{border-style:dashed;border-left:2px solid var(--ca)}
@@ -311,6 +361,13 @@
   .sheet::before{content:"";position:absolute;top:8px;right:22px;left:22px;height:1px;background:var(--line)}
   .sheet::after{content:"";position:absolute;top:5px;left:19px;width:6px;height:6px;background:var(--accent)}
   .sheet.show{transform:translateY(0)}
+  .sheet-x{
+    position:absolute;top:10px;right:10px;width:40px;height:40px;
+    display:grid;place-items:center;border:1px solid var(--line);
+    background:transparent;color:var(--fg);cursor:pointer;
+  }
+  .sheet-x:hover{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+  .sheet-x svg{width:14px;height:14px}
   .sheet .kicker{
     display:flex;align-items:center;gap:8px;
     font-size:10px;letter-spacing:1.7px;color:var(--muted);
@@ -373,6 +430,7 @@
     .course .m{font-size:8px;line-height:1.3;letter-spacing:-.2px}
     .course .m .full{display:none}
     .course .m .short{display:inline}
+    .course .tc{display:none}
     .course .t{display:none}
     .course.moved::after{top:2px;right:2px;font-size:7px}
     .panel{padding:16px 14px}
@@ -414,26 +472,27 @@
 </header>
 
 <div class="weekbar">
-  <div class="weeknav">
-    <button class="nav" id="prev" aria-label="上一周">‹</button>
-    <div class="label" id="weekLabel">—<span></span></div>
-    <button class="nav" id="next" aria-label="下一周">›</button>
-  </div>
+  <button class="nav" id="prev" aria-label="上一周">‹</button>
+  <button class="nav" id="next" aria-label="下一周">›</button>
   <button class="ghost" id="thisWeek">本周</button>
 </div>
-<div class="week-ticks" aria-hidden="true">
-  <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-  <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-</div>
+<div class="week-ticks" id="weekTicks" role="tablist" aria-label="选择周次"></div>
 
 <div class="ovbar" id="ovbar">
   <span id="ovtext"></span><span class="sp"></span>
   <button id="ovclear">全部撤销</button>
 </div>
 
-<div class="grid-frame">
+<div class="grid-frame" id="gridFrame">
   <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span>
   <span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
+
+  <div class="folio">
+    <span class="folio-tag" id="folioTag">WEEK</span>
+    <div class="label" id="weekLabel">—<span></span></div>
+    <span class="folio-term" id="folioTerm"></span>
+  </div>
+
   <div class="grid" id="grid"></div>
 </div>
 
@@ -606,6 +665,7 @@ function renderGrid(days){
       el.innerHTML = '<div class="n">' + c.name + '</div>'
                    + '<div class="m"><span class="full">' + (c.location || '') + '</span>'
                    + '<span class="short">' + (c.room || c.location || '') + '</span></div>'
+                   + '<div class="tc">' + (c.teacher || '') + '</div>'
                    + '<div class="t">' + (c.start || '') + '</div>';
       el.onclick = (function(course, dayInfo, node){
         return function(){ openSheet(course, dayInfo, node); };
@@ -631,11 +691,35 @@ function reduceMotion(){
 
 function paintWeek(w, days){
   curWeek = w;
-  $('#weekLabel').innerHTML = '第 <b>' + w + '</b> 周<span>' + days[0].date.slice(5).replace('-','/')
-    + ' – ' + days[6].date.slice(5).replace('-','/') + '</span>';
-  document.querySelectorAll('.week-ticks i').forEach(function(tick, i){
-    tick.className = i + 1 === w ? 'on' : '';
+  $('#weekLabel').innerHTML = '<b>' + pad(w) + '</b><span>'
+    + days[0].date.slice(5).replace('-','/') + ' – '
+    + days[6].date.slice(5).replace('-','/') + '</span>';
+  document.querySelectorAll('#weekTicks button').forEach(function(tick, i){
+    var on = i + 1 === w;
+    tick.classList.toggle('on', on);
+    tick.setAttribute('aria-selected', on ? 'true' : 'false');
   });
+}
+
+/* 刻痕不是装饰：每一根代表一周，点哪根切哪周 */
+function buildWeekTicks(){
+  var box = $('#weekTicks');
+  if (!box || box.childElementCount) return;
+  for (var i = 1; i <= DATA.maxWeek; i++){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.w = 'W' + pad(i);
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-label', '第 ' + i + ' 周');
+    b.setAttribute('aria-selected', 'false');
+    b.onclick = (function(n){ return function(){ showWeek(n, true); }; })(i);
+    box.appendChild(b);
+  }
+  var term = document.getElementById('folioTerm');
+  if (term && DATA.start){
+    var y0 = parseInt(String(DATA.start).slice(0, 4), 10);
+    term.textContent = y0 + '–' + (y0 + 1) + ' · 共 ' + DATA.maxWeek + ' 周';
+  }
 }
 
 /* animate 只在「用户主动切周」时为 true；调课刷新、问答跳转不翻页，否则太吵 */
@@ -649,16 +733,16 @@ function showWeek(w, animate){
     return;
   }
 
-  var grid = $('#grid');
+  var frame = $('#gridFrame');
   paintWeek(w, days);
   if (_flipTimer) clearTimeout(_flipTimer);
-  grid.classList.remove('pushin');
-  grid.classList.add('pushout');
+  frame.classList.remove('swapin');
+  frame.classList.add('swapout');
   _flipTimer = setTimeout(function(){
     renderGrid(days);
-    grid.classList.remove('pushout');
-    void grid.offsetWidth;
-    grid.classList.add('pushin');
+    frame.classList.remove('swapout');
+    void frame.offsetWidth;
+    frame.classList.add('swapin');
     _flipTimer = null;
   }, 160);
 }
@@ -888,7 +972,7 @@ function updateOvbar(){
 function closeSheet(){
   sheetEl.classList.remove('show');
   scrimEl.classList.remove('show');
-  $('#grid').classList.remove('depth');
+  var fr = document.getElementById('gridFrame'); if (fr) fr.classList.remove('depth');
   dropGhost();
 }
 
@@ -924,44 +1008,55 @@ function openSheet(c, day, node){
 /* 把课程块从网格里「抽出来」：克隆一份飞向屏幕中央并放大，
    网格同时后退变淡。像从档案架里抽出一份文件摊到眼前。 */
 function drawOut(node, done){
-  var r = node.getBoundingClientRect();
-  var g = node.cloneNode(true);
-  g.className = 'course drawn';
-  g.style.left = r.left + 'px';
-  g.style.top = r.top + 'px';
-  g.style.width = r.width + 'px';
-  g.style.height = r.height + 'px';
-
-  var targetW = Math.min(430, window.innerWidth - 56);
-  var targetH = Math.min(240, window.innerHeight * 0.44);
-  var scale = Math.min(targetW / r.width, targetH / r.height);
+  var first = node.getBoundingClientRect();
+  var w = Math.min(430, window.innerWidth - 56);
+  var h = Math.min(230, window.innerHeight * 0.42);
   var cx = window.innerWidth / 2;
   var cy = window.innerHeight * 0.44;
 
-  g.style.setProperty('--dx', (cx - (r.left + r.width / 2)).toFixed(1) + 'px');
-  g.style.setProperty('--dy', (cy - (r.top + r.height / 2)).toFixed(1) + 'px');
-  g.style.setProperty('--ds', scale.toFixed(3));
+  /* 先按「最终尺寸」建卡片，再用反向 transform 缩回原来的格子。
+     这样文字是按最终字号光栅化的，放大过程全程清晰；
+     反过来（先小后 scale）就会糊成一团。 */
+  var g = document.createElement('div');
+  g.className = 'drawn';
+  g.style.left = (cx - w / 2) + 'px';
+  g.style.top = (cy - h / 2) + 'px';
+  g.style.width = w + 'px';
+  g.style.height = h + 'px';
+  g.style.transformOrigin = 'center center';
 
-  /* 上一张还没飞完就先清掉，避免快速连点叠出好几层 */
+  var c = edit;
+  var pn = function(n){ return (n < 10 ? '0' : '') + n; };
+  g.innerHTML = '<div class="dr-kicker">档案 / FILE<span class="dr-no">W'
+    + pn(c.week) + '·D' + pn(c.toDay || 1) + '·P' + pn(c.period) + '</span></div>'
+    + '<div class="dr-name">' + c.name + '</div>'
+    + '<div class="dr-meta">' + (c.teacher || '') + '　' + (c.room || c.location || '') + '</div>';
+
+  var dx = (first.left + first.width / 2) - cx;
+  var dy = (first.top + first.height / 2) - cy;
+  var sc = first.width / w;
+  g.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) scale(' + sc.toFixed(4) + ')';
+
   if (_ghost){ _ghost.remove(); _ghost = null; }
   _ghost = g;
-
   document.body.appendChild(g);
-  $('#grid').classList.add('depth');
-
-  /* 用定时器而不是 rAF 触发：被切到后台的 webview 会节流 rAF，
-     那样这张卡会永远停在原地、盖在页面上。 */
-  setTimeout(function(){ g.classList.add('out'); }, 20);
+  var frame = document.getElementById('gridFrame');
+  if (frame) frame.classList.add('depth');
 
   setTimeout(function(){
+    g.style.transform = 'translate(0,0) scale(1) translateZ(120px) rotateX(6deg)';
+  }, 20);
+
+  setTimeout(function(){
+    g.style.zIndex = '30';            // 降到面板下面，别叠着两层字
     g.classList.add('fade');
     done();
   }, 430);
 
   setTimeout(function(){
     if (_ghost === g) _ghost = null;
-    g.remove();
-  }, 800);
+    if (g.parentNode) g.remove();
+  }, 700);
 }
 
 function dropGhost(){
@@ -975,10 +1070,13 @@ function renderSheet(){
   var valid = tw >= 1 && tw <= DATA.maxWeek;
   var noop = isoOf(toDate) === edit.date && edit.toPeriod === edit.period;
 
-  var pad = function(n){ return (n < 10 ? '0' : '') + n; };
-  var h = '<div class="kicker">档案 / FILE'
-        + '<span class="file-no">W' + pad(edit.week) + '·D' + pad(edit.toDay || 1)
-        + '·P' + pad(edit.period) + '</span></div>';
+  var pn = function(n){ return (n < 10 ? '0' : '') + n; };
+  var h = '<button class="sheet-x" data-k="close" aria-label="关闭">'
+        + '<svg viewBox="0 0 14 14" aria-hidden="true">'
+        + '<path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg></button>';
+  h += '<div class="kicker">档案 / FILE'
+        + '<span class="file-no">W' + pn(edit.week) + '·D' + pn(edit.toDay || 1)
+        + '·P' + pn(edit.period) + '</span></div>';
   h += '<h3>' + edit.name + '</h3>';
   h += '<div class="sub">第 ' + edit.week + ' 周 ' + DAY_NAMES[
         parseISO(edit.date).getDay() || 7] + ' 第 ' + edit.period + '-' +
@@ -1014,7 +1112,6 @@ function renderSheet(){
        (noop ? '　·　与原时间相同' : '') + '</div>';
 
   h += '<div class="acts">';
-  h += '<button data-k="close">取消</button>';
   if (edit.exists){
     h += '<button class="danger" data-k="undo">撤销调课</button>';
   } else {
@@ -1128,6 +1225,22 @@ $('#ovclear').onclick = function(){
   grid.addEventListener('pointerleave', clearFocus);
 })();
 
+document.addEventListener('keydown', function(e){
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  if (e.key === 'Escape'){ closeSheet(); return; }
+  if (sheetEl.classList.contains('show')) return;
+  if (e.key === 'ArrowLeft'){
+    e.preventDefault();
+    showWeek(Math.max(1, (curWeek || 1) - 1), true);
+  } else if (e.key === 'ArrowRight'){
+    e.preventDefault();
+    showWeek(Math.min(DATA.maxWeek, (curWeek || 1) + 1), true);
+  } else if (e.key === 'Home'){
+    e.preventDefault();
+    showWeek(clampWeek(weekOfDate(NOW)), true);
+  }
+});
+
 $('#prev').onclick = function(){ showWeek(Math.max(1, (curWeek || 1) - 1), true); };
 $('#next').onclick = function(){ showWeek(Math.min(DATA.maxWeek, (curWeek || 1) + 1), true); };
 $('#thisWeek').onclick = function(){ showWeek(clampWeek(weekOfDate(NOW)), true); };
@@ -1148,6 +1261,7 @@ $('#cls').textContent = DATA.meta.className || '课表';
 var cw = weekOfDate(NOW);
 $('#sub').textContent = (DATA.meta.student || '') + ' · 今天' + DAY_NAMES[NOW.getDay() || 7]
   + ' · 第 ' + clampWeek(cw) + ' 周';
+buildWeekTicks();
 showWeek(clampWeek(cw), true);
 updateOvbar();
 
