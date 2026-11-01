@@ -6,6 +6,10 @@
 
 > 这是一个个人项目：数据源全部是公开接口，微信推送走的是个人通道，**仅供学习与自用**。
 
+**在线演示**：<https://adler862.github.io/class-schedule-mcp/> —— 打开即用的离线课表页面（示例数据），
+不联网、不请求任何外部资源。该页面由 `docs/index.html` 提供，用
+`python tools/build_single.py --out docs/index.html` 从同一套引擎构建。
+
 ## 功能
 
 服务对外暴露 **11 个 MCP 工具**：

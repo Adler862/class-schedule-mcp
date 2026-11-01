@@ -88,7 +88,8 @@ def build_data(today=None, demo=False):
         'start': start.isoformat(),
         # 只有 --date 显式指定才写死日期；否则前端跟着系统时间走
         'today': now.isoformat() if demo else None,
-        'currentWeek': semester.current_week(now, start),
+        # 不写 currentWeek：前端自己按系统时间算，写进来只会让产物每天变一次，
+        # 导致「同一个数据两次构建结果不同」，也就没法把构建产物提交进仓库当演示页。
         'maxWeek': max_week,
         'palette': build_palette(data),
         'periodTimes': {str(k): v for k, v in semester.period_times().items()},
@@ -133,9 +134,10 @@ def main():
     with open(out, 'w', encoding='utf-8') as f:
         f.write(html)
     size = os.path.getsize(out) / 1024
+    week = semester.current_week(today or datetime.date.today(), semester.resolve_start())
     print(f'已生成 {out}')
     print(f'  {size:.0f} KB · {len(payload["courses"])} 门课 · {payload["maxWeek"]} 周 · '
-          f'当前第 {payload["currentWeek"]} 周')
+          f'当前第 {week} 周')
     print('  双击打开即可，不需要联网、不需要装任何东西。')
 
 

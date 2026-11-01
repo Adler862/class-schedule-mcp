@@ -127,7 +127,11 @@ class RenderTest(unittest.TestCase):
 
     def test_demo_date_is_frozen(self):
         self.assertEqual(self.payload['today'], '2026-11-02')
-        self.assertEqual(self.payload['currentWeek'], 10)
+
+    def test_payload_has_no_volatile_fields(self):
+        # 产物要能提交进仓库当 Pages 演示页，payload 里不能有每天都会变的字段
+        volatile = {'currentWeek', 'now', 'generatedAt'}
+        self.assertEqual(volatile & set(self.payload), set())
 
     def test_without_demo_date_today_is_null(self):
         real = bs.build_data()
@@ -145,3 +149,21 @@ class RenderTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class PagesArtifactTest(unittest.TestCase):
+    """docs/index.html 是 GitHub Pages 的入口，必须和重新构建的结果一致。
+
+    检查这个比"提交了构建产物"更重要：否则改了配置忘了重新构建，
+    线上演示就会和仓库代码对不上，而且没人会发现。
+    """
+
+    def test_docs_index_matches_fresh_build(self):
+        path = os.path.join(ROOT, 'docs', 'index.html')
+        if not os.path.exists(path):
+            self.skipTest('docs/index.html 尚未生成')
+        with open(path, 'r', encoding='utf-8', newline='') as f:
+            actual = f.read().replace('\r\n', '\n')
+        expected = bs.render(bs.build_data())
+        if actual != expected:
+            self.fail('docs/index.html 与当前代码构建结果不一致。\n'
+                      '重新生成：python tools/build_single.py --out docs/index.html')
