@@ -13,8 +13,8 @@ const LIFT = 1.15;
 /* 抽出后的状态：往前拉、转正、缩小、停在左侧 */
 const EX = {
   rise: 2.0,        // 从上方拔出：先抬到邻居脊顶之上，再转身，不会扫到别人
-  y: 1.62,          // 落定后的中心高度（大致对准画面中线）
-  scale: 0.44,
+  y: 1.72,          // 落定后的中心高度（大致对准画面中线）
+  scale: 0.33,
   /* 转到"差 35° 才正对"就停：真的转满 90° 会变成贴在屏幕上的一根横条，
      留出这 35°，长边仍有纵深、厚度也露出来，才像一件立体的东西。 */
   tilt: 0.60,
@@ -29,6 +29,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
+/* 雾色＝纸色。详情态把 near/far 收到相机跟前，背后整片档案架直接溶进纸里，
+   不是"调低不透明度"——那样还会看见轮廓。这是 RhineLabUI scene.ts 的做法：
+   fog.near = renderedDistance + lerp(5, -1, detail)，far 同步收到 12。 */
+scene.fog = new THREE.Fog(0xe8e5e1, 1000, 2000);
 /* 长焦，不是广角。
    去读 RhineLabUI 的 scene.ts 才发现的：它用 `PerspectiveCamera(34, …)` 但把
    **fov 压到 6.15**、相机拉到 84 个单位外。长焦把透视压平，一排脊才会看起来
@@ -36,6 +40,14 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(8.4, 1, 0.1, 200);
 camera.position.set(-15.6, 5.4, 27.4);
 camera.lookAt(0.35, 0.95, -1.2);
+
+/* 镜头绕行：档案抽出来之后**不转身**，是我们绕着它走到侧面去看。
+   直接 lerp 相机会从直线穿过整排档案，所以用球坐标插值走弧线。
+   圆心放在抽出的档案身上，半径/仰角/方位角各走一条。 */
+const CAM_PIVOT = new THREE.Vector3(-1.55, 1.35, 0);
+const CAM_FROM = new THREE.Spherical(31.06, 1.440, -0.474);   // 初始机位反算
+const CAM_TO = new THREE.Spherical(26.0, 1.160, -1.404);      // 侧面 + 抬高俯看
+const camLookAt = new THREE.Vector3();
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
 const key = new THREE.DirectionalLight(0xfffdf8, 2.2);
@@ -294,7 +306,14 @@ function matSet(w) {
 
 for (let c = 0; c < RAIL_N; c++) {
   const w = (c % PERIOD) + 1;
-  const m = matSet(w);
+  const base = matSet(w);
+  /* 每列克隆一套材质（map 纹理共享），否则 51 列共用同一份，
+     "只把其余档案压成背景"就无从下手。 */
+  const m = {
+    side: base.side.clone(), face: base.face.clone(),
+    top: base.top.clone(), cap: base.cap.clone(),
+    busy: base.busy, hRatio: base.hRatio,
+  };
   /* 同一周在轨道上会出现三次，高度给一点确定性微差，
      否则 17 列一个循环的重复感一眼就能看出来。 */
   const jit = 0.982 + pseudo(c * 7 + 3) * 0.036;
@@ -302,6 +321,10 @@ for (let c = 0; c < RAIL_N; c++) {
     col: c, week: w, x: 0, busy: m.busy,
     baseY: (H * m.hRatio * jit) / 2,
     holders: [], body: null, cap: null,
+    mats: [m.side, m.face, m.top, m.cap],
+    baseOpacity: m.busy ? 1 : 0.82,
+    capOpacity: m.busy ? 1 : 0.35,
+    _op: -1,
     lift: 0, ex: 0, spring: { value: 0, velocity: 0 },
   };
   for (let r = 0; r < ROWS; r++) {
@@ -325,12 +348,18 @@ for (let c = 0; c < RAIL_N; c++) {
       /* 长侧面标签贴在 +x 面上：架子上看是极薄的一条边（等于看不见），
          抽出来转正之后才整个露出来。 */
       const labelMat = labelMaterial(w);
-      const label = new THREE.Mesh(labelGeo, labelMat);
-      label.position.set(W / 2 + 0.002, 0, 0);
-      label.rotation.y = Math.PI / 2;
-      label.visible = false;
-      body.add(label);
-      rail.label = label;
+      const front = new THREE.Mesh(labelGeo, labelMat);
+      front.position.set(W / 2 + 0.002, 0, 0);
+      front.rotation.y = Math.PI / 2;
+      front.visible = false;
+      body.add(front);
+      const back = new THREE.Mesh(labelGeo, labelMat);
+      back.position.set(-W / 2 - 0.002, 0, 0);
+      back.rotation.y = -Math.PI / 2;
+      back.visible = false;
+      body.add(back);
+      rail.label = front;
+      rail.labelBack = back;
       rail.labelMat = labelMat;
       rail.body = body;
       pickables.push(body);
@@ -390,6 +419,7 @@ let railScroll = 0;
 /* 焦点横坐标：关着时居中，打开时左移，整条轨道跟着让位。 */
 const FOCUS_CLOSED = 0.30, FOCUS_OPEN = -1.55;
 let focusX = FOCUS_CLOSED;
+let camK = 0;                       // 镜头绕行进度 0→1
 
 /* ---------- 交互 ---------- */
 const ray = new THREE.Raycaster();
@@ -804,6 +834,10 @@ function tick(now) {
   const age = time - selectedAt;
 
   /* 焦点横坐标跟着面板开合，整条轨道因此整体让位到左半边 */
+  /* 镜头绕行的进度先算：柱阵列要按它压暗背景，得在相机段之前就有值 */
+  camK += ((sheetOpen ? 1 : 0) - camK) * Math.min(1, dt * (reduce ? 40 : 3.4));
+  const ck = smooth(camK);
+
   const fxTarget = sheetOpen ? FOCUS_OPEN : FOCUS_CLOSED;
   focusX += (fxTarget - focusX) * Math.min(1, dt * (reduce ? 40 : 4.2));
 
@@ -855,26 +889,40 @@ function tick(now) {
       + EX.rise * e1 * (1 - e2) + (EX.y - r.baseY) * e2;
     const sc = 1 + (EX.scale - 1) * e2;
 
-    /* 只有第 0 排会抬、会拔、会转；后排是背景，跟着横向滑动就够 */
+    /* 只有第 0 排会抬、会拔；**不转身**——转的是镜头，不是档案。
+       后排是背景，跟着横向滑动就够。 */
     const front = r.holders[0];
     front.position.set(r.x, py, 0);
-    front.rotation.y = FACE_ROT * e2;
+    front.rotation.y = 0;
     front.scale.setScalar(sc);
-    /* 标签跟着抽出进度淡入，收回去时一起消失 */
+    /* 标签跟着拔出进度淡入，塞回去时一起消失 */
     r.label.visible = e2 > 0.02;
+    if (r.labelBack) r.labelBack.visible = r.label.visible;
     r.labelMat.opacity = e2;
     for (let row = 1; row < ROWS; row++) {
       r.holders[row].position.set(r.x, r.baseY, -row * T);
     }
   }
 
-  /* 面板打开时略收窄视野（长焦再拉一点），不再动 position：
-     透视相机下改 position.z 会同时改变距离和视线方向，阵列会整体跑偏。 */
-  const fovTarget = sheetOpen ? 7.4 : 8.4;
-  if (Math.abs(camera.fov - fovTarget) > 0.005) {
-    camera.fov += (fovTarget - camera.fov) * Math.min(1, dt * 8);
-    camera.updateProjectionMatrix();
-  }
+  /* 镜头绕过去看：位置走球面弧线，注视点在圆心上再往右挪一点，
+     这样档案落在画面左半边，右边留给课表。 */
+  const sph = new THREE.Spherical(
+    CAM_FROM.radius + (CAM_TO.radius - CAM_FROM.radius) * ck,
+    CAM_FROM.phi + (CAM_TO.phi - CAM_FROM.phi) * ck,
+    CAM_FROM.theta + (CAM_TO.theta - CAM_FROM.theta) * ck
+  );
+  camera.position.setFromSpherical(sph).add(CAM_PIVOT);
+
+  /* 雾跟着相机距离走：关着时推到无穷远（等于没有），
+     打开时收到主角前后十来个单位，背景那一排就消失了。 */
+  const camDist = camera.position.distanceTo(CAM_PIVOT);
+  scene.fog.near = camDist + (1 - ck) * 900 - ck * 1.0;
+  scene.fog.far = camDist + (1 - ck) * 1800 + ck * 9;
+
+  const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
+  camLookAt.copy(CAM_PIVOT)
+    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 1.02 * ck);
+  camera.lookAt(camLookAt);
 
   /* 底部滚动周次条：跟着轨道位置一起平移，
      让"这是第几周、前后是什么"在没打开面板时也一眼可读。 */
