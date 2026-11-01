@@ -63,7 +63,7 @@
   .nav:hover{background:var(--surface-raised);color:var(--fg)}
   .grid{
     display:grid;gap:1px;margin-bottom:20px;overflow:hidden;
-    grid-template-columns:42px repeat(7,minmax(0,1fr));
+    grid-template-columns:48px repeat(7,minmax(0,1fr));
     background:var(--line);border:1px solid var(--line);border-radius:12px;
   }
   .grid>*{min-width:0}
@@ -78,8 +78,10 @@
   .ghead.today b{font-weight:600}
   .gt{
     font-size:10px;color:var(--faint);background:var(--surface);text-align:center;
-    padding:12px 3px 0;line-height:1.3;
+    padding:9px 2px 0;line-height:1.25;
   }
+  .gt b{display:block;font-weight:500;font-size:10.5px;color:var(--muted);letter-spacing:-.2px}
+  .gt span{display:block;font-size:8.5px;color:var(--faint);letter-spacing:-.3px}
   .cell{background:var(--surface);min-height:70px}
   .cell.today{background:var(--today-bg)}
   .course{
@@ -188,13 +190,15 @@
     .weekbar .label span{font-size:10px;margin-left:4px}
     #thisWeek{grid-column:2;padding:5px 8px;font-size:11px;min-height:30px}
     .nav{width:29px;height:30px;font-size:19px}
-    .grid{grid-template-columns:24px repeat(7,minmax(0,1fr));gap:3px;border-radius:10px;margin-bottom:16px}
+    .grid{grid-template-columns:31px repeat(7,minmax(0,1fr));gap:3px;border-radius:10px;margin-bottom:16px}
     .ghead{font-size:9.5px;padding:9px 1px 8px}
     .ghead b{font-size:11px}
-    .gt{font-size:9px;padding:11px 1px 0}
+    .gt{padding:7px 0 0}
+    .gt b{font-size:8.5px;letter-spacing:-.3px}
+    .gt span{font-size:7.5px;letter-spacing:0}
     .cell{min-height:62px}
-    .course{margin:2px 1px;padding:5px 2px 5px 3px;gap:2px;border-left-width:2px;border-radius:4px}
-    .course .n{font-size:9.5px;line-height:1.2;-webkit-line-clamp:3;letter-spacing:-.3px}
+    .course{margin:2px 1px;padding:4px 1px 4px 2px;gap:2px;border-left-width:2px;border-radius:4px}
+    .course .n{font-size:9.5px;line-height:1.2;-webkit-line-clamp:3;letter-spacing:-.5px}
     .course .m{font-size:8.5px;line-height:1.25;letter-spacing:-.3px;opacity:.85}
     .course .m .full{display:none}
     .course .m .short{display:inline}
@@ -379,7 +383,8 @@ function renderGrid(days){
     var t = document.createElement('div');
     t.className = 'gt';
     var sp = (r - 1) * 2 + 1;
-    t.textContent = sp + '-' + (sp + 1);
+    t.innerHTML = '<b>' + sp + '-' + (sp + 1) + '</b>'
+                + '<span>' + (DATA.periodTimes[String(sp)] || '') + '</span>';
     grid.appendChild(t);
     for (var c = 0; c < 7; c++){
       var cell = document.createElement('div');

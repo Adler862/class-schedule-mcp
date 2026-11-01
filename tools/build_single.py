@@ -79,7 +79,8 @@ def build_data(today=None, demo=False):
 
     weeks = {}
     for w in range(1, max_week + 1):
-        weeks[str(w)] = semester.week_grid(w, data=data)
+        # overrides=[] 是刻意的：单文件版的调课存在浏览器本地，构建产物不该带别人的调课
+        weeks[str(w)] = semester.week_grid(w, data=data, overrides=[])
 
     now = today or datetime.date.today()
 

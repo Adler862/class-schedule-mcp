@@ -87,8 +87,17 @@ python tools/build_single.py --date 2026-11-02   # 把某天当作"今天"，截
 直接把它改成周五，前面上过的周次也会跟着变，整学期历史就乱了。所以这里不改定义，
 只在上面叠一层「这一次」：某门课某天某节的这一节，挪到别处或取消。定义保持原样。
 
-调课记录存在**本机浏览器**里（localStorage），换设备不同步，清缓存会丢。
-这是离线单文件版的固有限制——没有后端就没有云端存储。
+数据存在哪，两个版本不一样：
+
+| | 单文件版 | `python src/server.py` |
+|---|---|---|
+| 存在哪 | 浏览器 localStorage | 服务端 `config/overrides.json` |
+| 换设备 | 不同步，清缓存会丢 | 跟着文件走 |
+| 适合 | 发同学、离线看 | 自己日常用 |
+
+服务端版的接口是 `GET/POST /api/overrides`，`config/overrides.json` 已加进 `.gitignore`
+——调课是个人状态，不该提交，也不该被构建进 Pages 演示页（`build_single` 显式传
+`overrides=[]` 就是这个原因）。
 
 ## 导入你自己的课表
 

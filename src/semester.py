@@ -31,6 +31,10 @@ DEFAULT_SEMESTER_START = datetime.date(2026, 8, 31)
 COURSES_JSON = os.environ.get('SCHEDULE_COURSES') or os.path.join(
     REPO_ROOT, 'config', 'courses.json')
 
+# 调课例外。不存在就是「没有任何调课」，不需要预先创建文件。
+OVERRIDES_JSON = os.environ.get('SCHEDULE_OVERRIDES') or os.path.join(
+    REPO_ROOT, 'config', 'overrides.json')
+
 # 节次 → 上课时刻（默认作息，可在 config/timetable.json 覆盖）
 DEFAULT_PERIOD_TIMES = {
     1: '08:30', 2: '09:25',
@@ -197,21 +201,101 @@ def _entry(course, table=None):
     }
 
 
-def courses_of(day, data=None, table=None):
-    """某一天要上的课，按开始节次排序。"""
-    data = data if data is not None else load()
+def load_overrides(path=None):
+    """读调课例外。文件不存在或坏掉都当作「没有调课」，不该因此让整页挂掉。"""
+    path = path or OVERRIDES_JSON
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    items = data.get('overrides') if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    return [o for o in items if isinstance(o, dict) and o.get('name') and o.get('fromDate')]
+
+
+def save_overrides(items, path=None):
+    """写调课例外：先写临时文件再替换，避免写一半断电留下坏 JSON。"""
+    path = path or OVERRIDES_JSON
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump({'overrides': items}, f, ensure_ascii=False, indent=2)
+        f.write('\n')
+    os.replace(tmp, path)
+    return items
+
+
+def _ov_key(name, date, period):
+    return (name, date, int(period))
+
+
+def apply_overrides(days, overrides=None, table=None):
+    """把「这一次」的例外叠到整周网格上。
+
+    语义与单文件版前端的 applyOverrides 完全一致：
+      - 源位置：如果这门课这一天这一节的这次被记了例外，就从原处去掉
+      - 目标位置：type == 'move' 的，按 toDate/toPeriod 插到对应的天
+    课表定义（courses.json）始终不变，所以前面几周的记录不会被追溯修改。
+    """
+    ovs = load_overrides() if overrides is None else overrides
+    if not ovs:
+        return days
     table = table or period_times()
+
+    by_source = {_ov_key(o['name'], o['fromDate'], o.get('fromPeriod', 0)): o for o in ovs}
+    out = []
+    for d in days:
+        out.append({
+            'day': d['day'], 'weekday': d['weekday'], 'date': d['date'],
+            'courses': [c for c in d['courses']
+                        if _ov_key(c['name'], d['date'], c['startPeriod']) not in by_source],
+        })
+
+    index = {d['date']: d for d in out}
+    for o in ovs:
+        if o.get('type') != 'move':
+            continue
+        target = index.get(o.get('toDate'))
+        if target is None:
+            continue
+        span = int(o.get('span') or 2)
+        sp = int(o['toPeriod'])
+        ep = sp + span - 1
+        target['courses'].append({
+            'name': o['name'],
+            'teacher': o.get('teacher', ''),
+            'location': o.get('location', ''),
+            'room': o.get('room') or short_room(o.get('location', '')),
+            'day': target['day'],
+            'startPeriod': sp,
+            'endPeriod': ep,
+            'start': period_start(sp, table),
+            'end': period_end(ep, table),
+            'note': '',
+            'moved': True,
+        })
+
+    for d in out:
+        d['courses'].sort(key=lambda c: c.get('startPeriod') or 0)
+    return out
+
+
+def courses_of(day, data=None, table=None):
+    """某一天要上的课，按开始节次排序。走 week_grid，调课例外才会生效。"""
+    data = data if data is not None else load()
     week = current_week(day, resolve_start(data))
-    picked = [
-        c for c in data.get('courses', [])
-        if c.get('day') == day.isoweekday() and course_active(c, week)
-    ]
-    picked.sort(key=lambda c: c.get('startPeriod') or 0)
-    return [_entry(c, table) for c in picked]
+    for d in week_grid(week, data=data, table=table):
+        if d['date'] == day.isoformat():
+            return d['courses']
+    return []
 
 
-def week_grid(week, data=None, table=None):
-    """整周网格：7 天，每天带日期与课程。"""
+def week_grid(week, data=None, table=None, overrides=None):
+    """整周网格：7 天，每天带日期与课程。overrides 省略时读 config/overrides.json。"""
     data = data if data is not None else load()
     table = table or period_times()
     start = resolve_start(data)
@@ -230,7 +314,22 @@ def week_grid(week, data=None, table=None):
             'date': d.isoformat(),
             'courses': [_entry(c, table) for c in picked],
         })
-    return out
+    return apply_overrides(out, overrides, table)
+
+
+def course_palette(data=None):
+    """课程名 → 颜色序号，按首次出现顺序发号。
+
+    前端据此着色：同一门课整学期同色，不同课尽量不同色。
+    以前前端各自用「名字哈希 % 8」，15 门课必然撞色。
+    """
+    data = data if data is not None else load()
+    order = {}
+    for c in data.get('courses', []):
+        name = c.get('name', '')
+        if name and name not in order:
+            order[name] = len(order)
+    return order
 
 
 def meta(data=None):
@@ -246,6 +345,9 @@ def meta(data=None):
         'currentWeek': current_week(today, resolve_start(data)),
         'weekday': DAY_NAMES[today.isoweekday()],
         'totalCourses': len(data.get('courses', [])),
+        'periodTimes': {str(k): v for k, v in period_times().items()},
+        'periodEnd': {str(k): period_end(k) for k in period_times()},
+        'palette': course_palette(data),
     }
 
 

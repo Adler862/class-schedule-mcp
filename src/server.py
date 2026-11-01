@@ -51,6 +51,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self._dispatch('GET')
 
+    def do_POST(self):
+        self._dispatch('POST')
+
     def do_HEAD(self):
         self._dispatch('HEAD')
 

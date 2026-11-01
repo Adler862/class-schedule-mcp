@@ -63,7 +63,7 @@
   .nav:hover{background:var(--surface-raised);color:var(--fg)}
   .grid{
     display:grid;gap:1px;margin-bottom:20px;overflow:hidden;
-    grid-template-columns:42px repeat(7,minmax(0,1fr));
+    grid-template-columns:48px repeat(7,minmax(0,1fr));
     background:var(--line);border:1px solid var(--line);border-radius:12px;
   }
   .grid>*{min-width:0}
@@ -78,8 +78,10 @@
   .ghead.today b{font-weight:600}
   .gt{
     font-size:10px;color:var(--faint);background:var(--surface);text-align:center;
-    padding:12px 3px 0;line-height:1.3;
+    padding:9px 2px 0;line-height:1.25;
   }
+  .gt b{display:block;font-weight:500;font-size:10.5px;color:var(--muted);letter-spacing:-.2px}
+  .gt span{display:block;font-size:8.5px;color:var(--faint);letter-spacing:-.3px}
   .cell{background:var(--surface);min-height:70px}
   .cell.today{background:var(--today-bg)}
   .course{
@@ -128,6 +130,54 @@
   @keyframes answer-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
   footer{margin-top:18px;text-align:center;font-size:11px;color:var(--faint);line-height:1.8}
   .loading{opacity:.45}
+  .course{position:relative}
+  .course.moved{border-left-style:dashed}
+  .course.moved::after{
+    content:"调";position:absolute;top:2px;right:3px;font-size:8px;line-height:1;
+    opacity:.55;letter-spacing:0;
+  }
+  .ovbar{
+    display:none;align-items:center;gap:8px;margin:0 2px 12px;padding:7px 10px;
+    border:1px solid var(--line);border-radius:9px;background:var(--surface);
+    font-size:11.5px;color:var(--muted);
+  }
+  .ovbar.show{display:flex}
+  .ovbar b{color:var(--fg);font-weight:500}
+  .ovbar .sp{flex:1}
+  .ovbar button{
+    border:0;background:transparent;color:var(--accent);font-size:11.5px;
+    cursor:pointer;padding:2px 4px;
+  }
+  .scrim{
+    position:fixed;inset:0;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;
+    transition:opacity .18s;z-index:40;
+  }
+  .scrim.show{opacity:1;pointer-events:auto}
+  .sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:41;transform:translateY(102%);
+    transition:transform .22s ease-out;background:var(--surface);
+    border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+    max-width:640px;margin:0 auto;max-height:80vh;overflow:auto;
+  }
+  .sheet.show{transform:translateY(0)}
+  .sheet h3{margin:0;font-size:14px;font-weight:600}
+  .sheet .sub{font-size:11.5px;color:var(--muted);margin:3px 0 14px}
+  .sheet .lbl{font-size:11px;color:var(--faint);margin:0 0 6px}
+  .sheet .row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .opt{
+    border:1px solid var(--line);background:var(--surface-raised);color:var(--fg);
+    border-radius:8px;padding:7px 9px;font-size:11.5px;cursor:pointer;line-height:1.2;
+  }
+  .opt.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+  .sheet .acts{display:flex;gap:8px;margin-top:6px}
+  .sheet .acts button{
+    flex:1;height:42px;border-radius:10px;font-size:13px;cursor:pointer;
+    border:1px solid var(--line);background:var(--surface);color:var(--fg);
+  }
+  .sheet .acts .primary{background:var(--accent);color:var(--on-accent);border:0;font-weight:600}
+  .sheet .acts .danger{color:#d9534f}
+  .loading{opacity:.45}
   @media (max-width:430px){
     body{padding:18px 10px calc(24px + env(safe-area-inset-bottom));font-size:13px}
     header{gap:8px;margin:0 2px 18px}
@@ -141,13 +191,15 @@
     .weekbar .label span{font-size:10px;margin-left:4px}
     #thisWeek{grid-column:2;padding:5px 8px;font-size:11px;min-height:30px}
     .nav{width:29px;height:30px;font-size:19px}
-    .grid{grid-template-columns:24px repeat(7,minmax(0,1fr));gap:3px;border-radius:10px;margin-bottom:16px}
+    .grid{grid-template-columns:31px repeat(7,minmax(0,1fr));gap:3px;border-radius:10px;margin-bottom:16px}
     .ghead{font-size:9.5px;padding:9px 1px 8px}
     .ghead b{font-size:11px}
-    .gt{font-size:9px;padding:11px 1px 0}
+    .gt{padding:7px 0 0}
+    .gt b{font-size:8.5px;letter-spacing:-.3px}
+    .gt span{font-size:7.5px;letter-spacing:0}
     .cell{min-height:62px}
-    .course{margin:2px 1px;padding:4px 1px 4px 3px;gap:1px;border-left-width:2px;border-radius:4px}
-    .course .n{font-size:9.5px;line-height:1.2;-webkit-line-clamp:3;letter-spacing:-.3px}
+    .course{margin:2px 1px;padding:4px 1px 4px 2px;gap:1px;border-left-width:2px;border-radius:4px}
+    .course .n{font-size:9.5px;line-height:1.2;-webkit-line-clamp:3;letter-spacing:-.5px}
     .course .m{font-size:8.5px;line-height:1.25;letter-spacing:-.3px;opacity:.85}
     .course .m .full{display:none}
     .course .m .short{display:inline}
@@ -190,6 +242,11 @@
   <button class="ghost" id="thisWeek">本周</button>
 </div>
 
+<div class="ovbar" id="ovbar">
+  <span id="ovtext"></span><span class="sp"></span>
+  <button id="ovclear">全部撤销</button>
+</div>
+
 <div class="grid" id="grid"></div>
 
 <div class="panel">
@@ -209,6 +266,9 @@
   <div class="answer" id="answer"></div>
 </div>
 
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet"></div>
+
 <footer>
   数据来自教务系统导出的课表 · 本地运行，不上传任何内容<br>
   点「存进日历」可把整学期课程导入手机日历
@@ -216,18 +276,17 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const PALETTE = [212, 262, 168, 32, 340, 190, 96, 288];
+const PALETTE = [212, 350, 127, 264, 42, 180, 317, 95, 232, 10, 147, 285];
 
 let meta = null;
 let curWeek = null;
 
 function colorOf(name){
-  let h = 0;
-  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 997;
-  const hue = PALETTE[h % PALETTE.length];
+  const idx = (meta && meta.palette && meta.palette[name]) || 0;
+  const hue = PALETTE[idx % PALETTE.length];
   return {
-    border: `hsl(${hue} 38% 52% / .9)`,
-    bg:     `hsl(${hue} 38% 52% / .13)`
+    border: `hsl(${hue} 42% 55% / .95)`,
+    bg:     `hsl(${hue} 42% 55% / .13)`
   };
 }
 
@@ -256,7 +315,7 @@ function renderGrid(days){
     const t = document.createElement('div');
     t.className = 'gt';
     const sp = (r - 1) * 2 + 1;
-    t.textContent = sp + '-' + (sp + 1);
+    t.innerHTML = `<b>${sp}-${sp + 1}</b><span>${(meta && meta.periodTimes && meta.periodTimes[sp]) || ''}</span>`;
     grid.appendChild(t);
     for (let c = 0; c < 7; c++){
       const cell = document.createElement('div');
@@ -275,7 +334,7 @@ function renderGrid(days){
       const span = Math.max(1, endRow - startRow);
       const el = document.createElement('div');
       const col = colorOf(c.name);
-      el.className = 'course';
+      el.className = 'course' + (c.moved ? ' moved' : '');
       el.style.gridRow = `${startRow + 1} / span ${span}`;
       el.style.gridColumn = String(i + 2);
       el.style.setProperty('--ca', col.border);
@@ -284,6 +343,7 @@ function renderGrid(days){
       el.innerHTML = `<div class="n">${c.name}</div>
                       <div class="m"><span class="full">${c.location || ''}</span><span class="short">${c.room || c.location || ''}</span></div>
                       <div class="t">${c.start || ''}</div>`;
+      el.onclick = () => openSheet(c, d);
       grid.appendChild(el);
     });
   });
@@ -340,6 +400,169 @@ async function ask(text){
   }
 }
 
+/* ---------- 调课 ----------
+   这一版调课记录存在服务端 config/overrides.json，换设备也还在。
+   请求完直接重拉当前周，服务端已经把例外算进去了，前端不重复实现一遍。 */
+let ovs = [];
+let edit = null;
+const sheetEl = $('#sheet'), scrimEl = $('#scrim');
+
+function dateOfWeekDay(w, day){
+  const start = new Date(meta.semesterStart + 'T00:00:00');
+  return new Date(start.getTime() + ((w - 1) * 7 + (day - 1)) * 86400000);
+}
+function isoOfDate(d){
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function dayOfIso(iso){ return new Date(iso + 'T00:00:00').getDay() || 7; }
+
+function updateOvbar(){
+  const bar = $('#ovbar');
+  if (ovs.length){
+    bar.classList.add('show');
+    $('#ovtext').innerHTML = `已记录 <b>${ovs.length}</b> 处调课`;
+  } else {
+    bar.classList.remove('show');
+  }
+}
+
+async function loadOverrides(){
+  try{
+    const r = await fetch('/api/overrides');
+    ovs = (await r.json()).overrides || [];
+  }catch(e){ ovs = []; }
+  updateOvbar();
+}
+
+function closeSheet(){
+  sheetEl.classList.remove('show');
+  scrimEl.classList.remove('show');
+}
+
+function openSheet(c, day){
+  const w = curWeek ?? meta.currentWeek;
+  const exists = ovs.find(o => o.name === c.name && o.fromDate === day.date
+                               && Number(o.fromPeriod) === Number(c.startPeriod))
+              || ovs.find(o => o.type === 'move' && o.name === c.name
+                               && o.toDate === day.date
+                               && Number(o.toPeriod) === Number(c.startPeriod));
+  edit = {
+    name: c.name, date: day.date, week: w, period: c.startPeriod,
+    span: Math.max(1, (c.endPeriod || c.startPeriod + 1) - c.startPeriod + 1),
+    teacher: c.teacher || '', location: c.location || '', room: c.room || '',
+    exists: exists || null, weekOffset: 0, toDay: day.day,
+    toPeriod: Math.floor((c.startPeriod - 1) / 2) * 2 + 1
+  };
+  if (exists && exists.type === 'move'){
+    const tw = Math.round(
+      (new Date(exists.toDate + 'T00:00:00') - new Date(meta.semesterStart + 'T00:00:00')) / 86400000 / 7) + 1;
+    edit.weekOffset = Math.max(0, Math.min(2, tw - w));
+    edit.toDay = dayOfIso(exists.toDate);
+    edit.toPeriod = Number(exists.toPeriod);
+  }
+  renderSheet();
+  sheetEl.classList.add('show');
+  scrimEl.classList.add('show');
+}
+
+function renderSheet(){
+  const tw = edit.week + edit.weekOffset;
+  const toDate = dateOfWeekDay(tw, edit.toDay);
+  const endP = edit.toPeriod + edit.span - 1;
+  const valid = tw >= 1 && tw <= 99;
+  const noop = isoOfDate(toDate) === edit.date && edit.toPeriod === edit.period;
+  const NAMES = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+  let h = `<h3>${edit.name}</h3>`;
+  h += `<div class="sub">第 ${edit.week} 周 ${NAMES[dayOfIso(edit.date)]} 第 ${edit.period}-${edit.period + edit.span - 1} 节 · ${edit.location || ''}</div>`;
+
+  h += '<div class="lbl">移到</div><div class="row">';
+  ['本周', '下周', '下下周'].forEach((t, i) => {
+    h += `<button class="opt${edit.weekOffset === i ? ' on' : ''}" data-k="wo" data-v="${i}">${t}</button>`;
+  });
+  h += '</div>';
+
+  h += '<div class="lbl">星期</div><div class="row">';
+  for (let d = 1; d <= 7; d++){
+    h += `<button class="opt${edit.toDay === d ? ' on' : ''}" data-k="day" data-v="${d}">${NAMES[d]}</button>`;
+  }
+  h += '</div>';
+
+  h += '<div class="lbl">第几大节</div><div class="row">';
+  for (let n = 1; n <= 6; n++){
+    const sp = (n - 1) * 2 + 1;
+    h += `<button class="opt${edit.toPeriod === sp ? ' on' : ''}" data-k="p" data-v="${sp}">${n}</button>`;
+  }
+  h += '</div>';
+
+  const st = (meta.periodTimes && meta.periodTimes[edit.toPeriod]) || '';
+  const et = (meta.periodEnd && meta.periodEnd[endP]) || '';
+  h += `<div class="sub" style="margin:0 0 12px">→ 第 ${tw} 周 ${NAMES[edit.toDay]} ${st}–${et}（第 ${edit.toPeriod}-${endP} 节）${noop ? '　·　与原时间相同' : ''}</div>`;
+
+  h += '<div class="acts">';
+  h += '<button data-k="close">取消</button>';
+  h += edit.exists
+    ? '<button class="danger" data-k="undo">撤销调课</button>'
+    : '<button class="danger" data-k="cancel">本次停课</button>';
+  h += `<button class="primary" data-k="ok"${valid && !noop ? '' : ' disabled style="opacity:.5"'}>确认调课</button>`;
+  h += '</div>';
+
+  sheetEl.innerHTML = h;
+}
+
+async function postOverride(payload){
+  const r = await fetch('/api/overrides', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await r.json();
+  if (!r.ok){
+    alert(data.error || '保存失败');
+    return false;
+  }
+  ovs = data.overrides || [];
+  updateOvbar();
+  closeSheet();
+  await loadWeek(curWeek ?? meta.currentWeek);
+  return true;
+}
+
+sheetEl.onclick = async e => {
+  const t = e.target.closest('[data-k]');
+  if (!t) return;
+  const k = t.dataset.k, v = t.dataset.v;
+  if (k === 'wo'){ edit.weekOffset = +v; renderSheet(); }
+  else if (k === 'day'){ edit.toDay = +v; renderSheet(); }
+  else if (k === 'p'){ edit.toPeriod = +v; renderSheet(); }
+  else if (k === 'close'){ closeSheet(); }
+  else if (k === 'undo'){
+    const o = edit.exists;
+    if (!o) return closeSheet();
+    await postOverride({ action: 'undo', name: o.name, fromDate: o.fromDate, fromPeriod: o.fromPeriod });
+  }
+  else if (k === 'cancel'){
+    await postOverride({ action: 'cancel', name: edit.name, fromDate: edit.date,
+                         fromPeriod: edit.period, span: edit.span,
+                         teacher: edit.teacher, location: edit.location, room: edit.room });
+  }
+  else if (k === 'ok'){
+    const tw = edit.week + edit.weekOffset;
+    await postOverride({ action: 'move', name: edit.name, fromDate: edit.date,
+                         fromPeriod: edit.period, span: edit.span,
+                         toDate: isoOfDate(dateOfWeekDay(tw, edit.toDay)),
+                         toPeriod: edit.toPeriod,
+                         teacher: edit.teacher, location: edit.location, room: edit.room });
+  }
+};
+scrimEl.onclick = closeSheet;
+$('#ovclear').onclick = async () => {
+  if (!ovs.length) return;
+  if (!confirm(`撤销全部 ${ovs.length} 处调课？`)) return;
+  await postOverride({ action: 'clear' });
+};
+
 $('#prev').onclick = () => loadWeek((curWeek ?? meta.currentWeek) - 1);
 $('#next').onclick = () => loadWeek((curWeek ?? meta.currentWeek) + 1);
 $('#thisWeek').onclick = () => loadWeek(meta.currentWeek);
@@ -351,6 +574,7 @@ document.querySelectorAll('.chip').forEach(c =>
 
 (async () => {
   await loadMeta();
+  await loadOverrides();
   await loadWeek(meta.currentWeek);
   // 支持 ?q=明天几节课 深链，便于分享/演示
   const preset = new URLSearchParams(location.search).get('q');

@@ -6,3 +6,7 @@ venv/
 output/
 *.log
 .DS_Store
+
+# 调课记录属个人数据，只在本地，不提交
+config/overrides.json
+config/overrides.json.tmp

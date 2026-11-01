@@ -59,6 +59,11 @@ def handle(method, path, query=None, body=None, root=None, today=None):
     today = today or datetime.date.today()
     path = urllib.parse.unquote(path or '/')
 
+    if method == 'POST':
+        if path == '/api/overrides':
+            return _post_overrides(body)
+        return _json({'error': 'method not allowed'}, 405)
+
     if method not in ('GET', 'HEAD'):
         return _json({'error': 'method not allowed'}, 405)
 
@@ -89,6 +94,9 @@ def handle(method, path, query=None, body=None, root=None, today=None):
         except ValueError:
             return _json({'error': 'date 需为 YYYY-MM-DD'}, 400)
         return _json(_day_payload(day, today))
+
+    if path == '/api/overrides':
+        return _json({'overrides': semester.load_overrides()})
 
     if path == '/api/ask':
         q = _first(query, 'q', '') or ''
@@ -229,6 +237,81 @@ def ask(q, today=None):
 
 
 _NOISE = re.compile(r'(在哪儿上|在哪上|在哪|什么时候上|什么时候|几节课|几节|上什么|有课吗|上课|在哪呢|呢|吗|的|课)')
+
+
+def _post_overrides(body):
+    """增删一处调课。
+
+    请求体是 JSON：
+      {"action":"move",  "name","fromDate","fromPeriod","span","toDate","toPeriod",
+                         "teacher","location","room"}
+      {"action":"cancel", ...同上但没有 to*}
+      {"action":"undo",  "name","fromDate","fromPeriod"}
+      {"action":"clear"}
+    返回操作后的完整例外列表，前端直接拿它重绘。
+    """
+    try:
+        req = json.loads((body or b'').decode('utf-8') or '{}')
+    except (ValueError, UnicodeDecodeError):
+        return _json({'error': '请求体不是合法 JSON'}, 400)
+    if not isinstance(req, dict):
+        return _json({'error': '请求体必须是对象'}, 400)
+
+    action = req.get('action')
+    items = semester.load_overrides()
+
+    if action == 'clear':
+        semester.save_overrides([])
+        return _json({'overrides': []})
+
+    if action == 'undo':
+        missing = [k for k in ('name', 'fromDate', 'fromPeriod') if not req.get(k)]
+        if missing:
+            return _json({'error': '缺少字段：' + '、'.join(missing)}, 400)
+        kept = [o for o in items
+                if not (o['name'] == req['name'] and o['fromDate'] == req['fromDate']
+                        and int(o['fromPeriod']) == int(req['fromPeriod']))]
+        semester.save_overrides(kept)
+        return _json({'overrides': kept})
+
+    if action not in ('move', 'cancel'):
+        return _json({'error': "action 只能是 move / cancel / undo / clear"}, 400)
+
+    missing = [k for k in ('name', 'fromDate', 'fromPeriod') if not req.get(k)]
+    if action == 'move':
+        missing += [k for k in ('toDate', 'toPeriod') if not req.get(k)]
+    if missing:
+        return _json({'error': '缺少字段：' + '、'.join(missing)}, 400)
+
+    try:
+        datetime.date.fromisoformat(req['fromDate'])
+        if action == 'move':
+            datetime.date.fromisoformat(req['toDate'])
+        entry = {
+            'name': req['name'],
+            'fromDate': req['fromDate'],
+            'fromPeriod': int(req['fromPeriod']),
+            'span': int(req.get('span') or 2),
+            'type': action,
+            'teacher': req.get('teacher', ''),
+            'location': req.get('location', ''),
+            'room': req.get('room', ''),
+        }
+        if action == 'move':
+            entry['toDate'] = req['toDate']
+            entry['toPeriod'] = int(req['toPeriod'])
+        if entry['fromDate'] == entry.get('toDate') and \
+                entry['fromPeriod'] == entry.get('toPeriod'):
+            return _json({'error': '原时间和目标时间相同'}, 400)
+    except (TypeError, ValueError):
+        return _json({'error': '日期或节次格式不对'}, 400)
+
+    kept = [o for o in items
+            if not (o['name'] == entry['name'] and o['fromDate'] == entry['fromDate']
+                    and int(o['fromPeriod']) == int(entry['fromPeriod']))]
+    kept.append(entry)
+    semester.save_overrides(kept)
+    return _json({'overrides': kept})
 
 
 def _match_course(q):
