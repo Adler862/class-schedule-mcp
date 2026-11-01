@@ -3,12 +3,12 @@
 import * as THREE from 'three';
 
 const DATA = window.DATA || { courses: [], maxWeek: 17, start: '2026-08-31' };
-const COLS = 24;                // 一排 24 根，铺满横向
+const COLS = 32;                // 够宽，左右两端都推出画面，看不到"整块的边"
 /* 参考图里的脊不是"书"，是**极长的长条板**：脊背很窄（W）、高度中等（H）、
    深度方向延伸出去很远（T）。一排平行铺开，靠透视形成"一片"的观感。
    之前 T=0.32 做成的是"书"，怎么调角度都不像。 */
-const W = 0.17, H = 1.25, T = 5.4;
-const GAP_X = 0.195;
+const W = 0.17, H = 1.30, T = 8.0;
+const GAP_X = 0.245;
 const LIFT = 0.62, PULL = 0.0;
 
 const canvas = document.getElementById('stage');
@@ -18,11 +18,14 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-/* 透视相机：参考图的近大远小很明显，正交投影出来是一排等宽的平行条带，
-   完全没有那个纵深。fov 压小一点（长焦感），俯角约 14°。 */
-const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
-camera.position.set(-1.95, 3.5, 7.9);
-camera.lookAt(0.42, 0.10, -1.5);
+/* 长焦，不是广角。
+   去读 RhineLabUI 的 scene.ts 才发现的：它用 `PerspectiveCamera(34, …)` 但把
+   **fov 压到 6.15**、相机拉到 84 个单位外。长焦把透视压平，一排脊才会看起来
+   "平行"，只在远处轻微收敛——那正是参考图的味道。
+   我之前 fov 32，脊呈放射状散开，怎么调角度都不对。 */
+const camera = new THREE.PerspectiveCamera(8.4, 1, 0.1, 200);
+camera.position.set(-15.6, 5.4, 27.4);
+camera.lookAt(0.35, 0.95, -1.2);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
 const key = new THREE.DirectionalLight(0xfffdf8, 2.2);
@@ -127,7 +130,7 @@ for (let w = 1; w <= maxWeek; w++) taken.add(colOf(w));
 for (let c = 0; c < COLS; c++) {
   if (taken.has(c)) continue;
   const seed = c * 13 + 7;
-  const h = H * (0.88 + pseudo(seed) * 0.12);
+  const h = H * (0.72 + pseudo(seed) * 0.26);
   const m = new THREE.Mesh(bodyGeo, decorMat);
   m.scale.set(1, h / H, 1);
   const cx = (c - (COLS - 1) / 2) * GAP_X;
@@ -523,9 +526,12 @@ function tick(now) {
   }
 
   /* 面板打开时场景略退，给底部面板让出层次感 */
-  const distTarget = sheetOpen ? 6.95 : 6.4;
-  if (Math.abs(camera.position.z - distTarget) > 0.002) {
-    camera.position.z += (distTarget - camera.position.z) * Math.min(1, dt * 8);
+  /* 面板打开时略收窄视野（长焦再拉一点），不再动 position：
+     透视相机下改 position.z 会同时改变距离和视线方向，阵列会整体跑偏。 */
+  const fovTarget = sheetOpen ? 7.8 : 8.4;
+  if (Math.abs(camera.fov - fovTarget) > 0.005) {
+    camera.fov += (fovTarget - camera.fov) * Math.min(1, dt * 8);
+    camera.updateProjectionMatrix();
   }
 
   camera.updateMatrixWorld();
