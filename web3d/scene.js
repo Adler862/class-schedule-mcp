@@ -223,7 +223,13 @@ canvas.addEventListener('pointermove', (ev) => {
 canvas.addEventListener('pointerleave', () => { hovered = -1; canvas.style.cursor = 'default'; });
 canvas.addEventListener('click', (ev) => {
   const s = pick(ev);
-  if (s) select(slots.indexOf(s));
+  if (!s) return;
+  const i = slots.indexOf(s);
+  /* 左键点脊就直接打开课表，不用再去找引线里那个按钮。
+     点的是当前已经打开的那一根 → 收起。 */
+  if (sheetOpen && i === selected) { closeWeekSheet(); return; }
+  select(i);
+  if (!sheetOpen) openWeekSheet(slots[i].week);
 });
 
 function select(i) {
@@ -282,41 +288,85 @@ const DAY_NAMES = ['', '周一', '周二', '周三', '周四', '周五', '周六
 
 function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
-function openWeekSheet(week) {
-  const list = weekCourses(week).slice();
-  list.sort((a, b) => (a.day - b.day) || (a.startPeriod - b.startPeriod));
+/* 课程配色：按课程名首次出现顺序发号，同一门课整学期同色。
+   和主站 index.html 用的是同一组色相、同一套规则。 */
+const PALETTE = [212, 350, 127, 264, 42, 180, 317, 95];
+const HUE_OF = (() => {
+  const m = {};
+  let n = 0;
+  for (const c of (DATA.courses || [])) {
+    if (c.name && !(c.name in m)) m[c.name] = n++;
+  }
+  return m;
+})();
+function colorOf(name) {
+  const h = PALETTE[(HUE_OF[name] || 0) % PALETTE.length];
+  return 'hsl(' + h + ' 38% 52%)';
+}
 
-  const body = E('wsBody');
+/* 面板内容：7 列星期 × 6 大节的正经课表网格。
+   不是按天罗列的清单——用户要的是"正常课表"的样子。 */
+function openWeekSheet(week) {
+  const host = E('wsGrid');
+  const list = weekCourses(week).slice();
+  const todayIso = (() => {
+    const d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  })();
+
   E('wsNum').innerHTML = pad2(week) + '<s id="wsAll">/ ' + pad2(maxWeek) + '</s>';
-  E('wsRange').textContent = rangeOf(week) + ' · ' + list.length + ' 节';
+  const names = new Set(list.map(c => c.name));
+  E('wsRange').textContent = rangeOf(week) + ' · ' + names.size + ' 门课 / ' + list.length + ' 节';
   if (E('wsFull')) E('wsFull').href = 'index.html?w=' + week;
 
   if (!list.length) {
-    body.innerHTML = '<div class="wempty">这一周没有排课</div>';
+    host.innerHTML = '<div class="tempty">这一周没有排课</div>';
   } else {
-    let html = '';
-    let idx = 0;
-    let lastDay = 0;
-    for (const c of list) {
-      if (c.day !== lastDay) {
-        if (lastDay) html += '</div>';
-        lastDay = c.day;
-        const d = isoOf(week, c.day);
-        html += '<div class="wday"><h4><b>' + DAY_NAMES[c.day] + '</b>'
-              + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()) + '</h4>';
-      }
-      const t = (DATA.periodTimes && DATA.periodTimes[c.startPeriod]) || '';
-      const where = c.room || c.location || '';
-      html += '<div class="wrow" style="--i:' + (idx++) + '">'
-            + '<span class="tm">' + t + '</span>'
-            + '<span class="nm">' + c.name
-            + '<em>' + c.startPeriod + '-' + c.endPeriod + ' 节'
-            + (c.teacher ? '　' + c.teacher : '') + '</em></span>'
-            + '<span class="mt">' + where + '</span>'
-            + '</div>';
+    let h = '<div class="tgrid">';
+
+    /* 所有格子都显式指定行列。
+       不能让它们走自动流：课程块是显式 grid-row/column 定位的，自动流会跳过
+       被课程块占住的格子，节次列就会被挤到某一天的列里去（第一版就是这样错的）。 */
+    h += '<div class="th blank" style="grid-column:1;grid-row:1"></div>';
+    for (let d = 1; d <= 7; d++) {
+      const dt = isoOf(week, d);
+      h += '<div class="th" style="grid-column:' + (d + 1) + ';grid-row:1;--i:' + (d - 1) + '">'
+         + DAY_NAMES[d]
+         + '<em>' + pad2(dt.getMonth() + 1) + '/' + pad2(dt.getDate()) + '</em></div>';
     }
-    if (lastDay) html += '</div>';
-    body.innerHTML = html;
+
+    /* 六个大节：左侧节次列（1-2 / 08:30）+ 7 个空格子当底板 */
+    for (let r = 1; r <= 6; r++) {
+      const sp = (r - 1) * 2 + 1;
+      const t = (DATA.periodTimes && DATA.periodTimes[sp]) || '';
+      h += '<div class="gt" style="grid-column:1;grid-row:' + (r + 1) + ';--i:' + r + '">'
+         + '<b>' + sp + '-' + (sp + 1) + '</b><span>' + t + '</span></div>';
+      for (let d = 1; d <= 7; d++) {
+        const dt = isoOf(week, d);
+        const iso = dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+        h += '<div class="cell' + (iso === todayIso ? ' today' : '') + '" style="grid-column:'
+           + (d + 1) + ';grid-row:' + (r + 1) + '"></div>';
+      }
+    }
+
+    /* 课程块：显式指定行列，跨大节的课用 span 占多行 */
+    let idx = 0;
+    for (const c of list) {
+      const r1 = Math.ceil(c.startPeriod / 2);
+      const r2 = Math.ceil(c.endPeriod / 2);
+      const span = Math.max(1, r2 - r1 + 1);
+      if (r1 < 1 || r1 > 6) continue;
+      const where = c.room || c.location || '';
+      h += '<div class="cc" style="grid-column:' + (c.day + 1)
+         + ';grid-row:' + (r1 + 1) + ' / span ' + Math.min(span, 7 - r1)
+         + ';--c:' + colorOf(c.name) + ';--i:' + (idx++) + '">'
+         + '<b>' + c.name + '</b>'
+         + '<i>' + where + '</i>'
+         + '</div>';
+    }
+
+    h += '</div>';
+    host.innerHTML = h;
   }
 
   E('wsScrim').classList.add('show');
@@ -325,7 +375,8 @@ function openWeekSheet(week) {
   E('callLink').textContent = '收起 ↑';
   sheetOpen = true;
   lastSheetWeek = week;
-  body.scrollTop = 0;
+  const body = E('wsBody');
+  if (body) { body.scrollTop = 0; body.scrollLeft = 0; }
 }
 
 function closeWeekSheet() {

@@ -128,39 +128,60 @@
 
   .wbody{overflow:auto;padding:2px 18px 20px;overscroll-behavior:contain}
 
-  .wday{margin-top:15px}
-  .wday:first-child{margin-top:6px}
-  .wday h4{
-    margin:0 0 4px;display:flex;align-items:baseline;gap:9px;
-    font-size:10px;letter-spacing:1.8px;color:#6f6c64;font-weight:400;
-  }
-  .wday h4 b{font-size:11.5px;letter-spacing:1.2px;color:#151713;font-weight:500}
-  .wday h4 i{font-style:normal;color:#a6a49c;font-size:10px}
+  /* ---------- 课表网格 ----------
+     面板里要的是"正常课表"：7 列星期 × 6 大节，不是按天罗列的清单。
+     用 CSS Grid，x 轴自动流；课程块用 grid-row span 跨大节（3-4 节的课占两行）。 */
+  .twrap{overflow:auto;-webkit-overflow-scrolling:touch;padding:0 0 2px}
 
-  .wrow{
-    display:grid;grid-template-columns:52px 1fr auto;gap:12px;
-    padding:8px 0;border-bottom:1px solid #e2ded7;
-    align-items:baseline;font-size:12.5px;
+  .tgrid{
+    display:grid;
+    grid-template-columns:42px repeat(7, minmax(0,1fr));
+    gap:1px;background:#cdc7ba;border:1px solid #cdc7ba;
+    min-width:560px;
   }
-  .wrow:last-child{border-bottom:0}
-  .wrow .tm{font-size:10.5px;color:#6f6c64;font-variant-numeric:tabular-nums;letter-spacing:.2px}
-  .wrow .nm{color:#151713;line-height:1.35}
-  .wrow .nm em{
-    font-style:normal;display:block;font-size:10px;color:#8f8a80;
-    letter-spacing:.4px;margin-top:1px;
-  }
-  .wrow .mt{font-size:10.5px;color:#6f6c64;text-align:right;white-space:nowrap}
 
-  /* 逐条淡入：只在展开时播放一次，靠 --i 错开 */
-  .wsheet.show .wrow{
+  .tgrid .th{
+    background:#e9e4da;padding:6px 1px 5px;text-align:center;
+    font-size:10px;letter-spacing:.4px;color:#151713;line-height:1.2;
+  }
+  .tgrid .th em{display:block;font-style:normal;font-size:8.5px;color:#8f8a80;margin-top:2px;
+    font-variant-numeric:tabular-nums}
+  .tgrid .th.blank{background:#e9e4da}
+
+  .tgrid .gt{
+    background:#e9e4da;text-align:center;padding:6px 1px 0;line-height:1.2;
+  }
+  .tgrid .gt b{display:block;font-size:9.5px;font-weight:500;color:#151713;
+    font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .tgrid .gt span{display:block;font-size:7.5px;color:#8f8a80;margin-top:2px;
+    font-variant-numeric:tabular-nums}
+
+  .tgrid .cell{background:#f8f6f1;min-height:46px;position:relative}
+  .tgrid .cell.today{background:#f1ece1}
+
+  .tgrid .cc{
+    position:relative;margin:2px;padding:3px 3px 3px 5px;overflow:hidden;
+    border-left:2px solid var(--c,#a8a294);
+    background:#fff;z-index:1;
+  }
+  .tgrid .cc b{
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+    font-size:9.5px;font-weight:500;line-height:1.22;color:#151713;letter-spacing:-.2px;
+  }
+  .tgrid .cc i{
+    display:block;font-style:normal;font-size:8px;color:#8f8a80;margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+
+  .tempty{padding:22px 0 26px;text-align:center;font-size:11.5px;color:#8f8a80;letter-spacing:1.2px}
+
+  /* 展开时逐行淡入，靠 --i 错开 */
+  .wsheet.show .tgrid .th,
+  .wsheet.show .tgrid .gt,
+  .wsheet.show .tgrid .cc{
     animation:rowIn 320ms cubic-bezier(.22,1,.36,1) both;
-    animation-delay:calc(var(--i,0) * 16ms);
+    animation-delay:calc(var(--i,0) * 12ms);
   }
-  @keyframes rowIn{
-    from{opacity:0;transform:translateY(6px)}
-    to{opacity:1;transform:none}
-  }
-  .wempty{padding:26px 0 30px;text-align:center;font-size:11.5px;color:#8f8a80;letter-spacing:1.2px}
 
   .wfoot{
     padding:10px 18px calc(12px + env(safe-area-inset-bottom));
@@ -243,7 +264,7 @@
       <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg>
     </button>
   </div>
-  <div class="wbody" id="wsBody"></div>
+  <div class="wbody" id="wsBody"><div class="twrap" id="wsGrid"></div></div>
   <div class="wfoot"><a href="index.html" id="wsFull">在表格里看完整学期 →</a></div>
 </section>
 
