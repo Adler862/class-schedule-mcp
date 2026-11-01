@@ -3,14 +3,12 @@
 import * as THREE from 'three';
 
 const DATA = window.DATA || { courses: [], maxWeek: 17, start: '2026-08-31' };
-const COLS = 1;                 // 真脊只有一排，横向铺满
-/* 参考图里看着有几十根脊，但它的索引写的是 ARCHIVE INDEX (7) / 01 / 08 ——
-   真档案只有个位数，密度来自前后几排**装饰脊**。所以这里也一样：
-   17 本真脊横排，前后各 2 排装饰，靠它们把"档案库"的密度撑起来。 */
-const W = 0.20, H = 1.66, T = 0.50;
-const GAP_X = 0.246, GAP_Z = 0.56;
-const DECOR_ROWS = 2;           // 前后各 2 排
-const LIFT = 0.62, PULL = 0.13;
+const COLS = 6;
+/* 参考图里是一整片几乎无缝的脊，不是一横排。
+   17 本真脊按 6 列铺成 3 行，空位与前后各一排用装饰脊补齐，让纵深也看不到断口。 */
+const W = 0.19, H = 1.80, T = 0.32;
+const GAP_X = 0.232, GAP_Z = 0.60;
+const LIFT = 0.70, PULL = 0.13;
 
 const canvas = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -20,8 +18,8 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-4, 4, 2.6, -2.6, 0.1, 100);
-camera.position.set(5.8, 7.2, 7.6);
-camera.lookAt(-0.22, 0.84, -0.24);
+camera.position.set(3.4, 7.4, 8.8);
+camera.lookAt(0.10, 0.80, 0);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
 const key = new THREE.DirectionalLight(0xfffdf8, 2.2);
@@ -40,14 +38,14 @@ scene.add(fill);
 /* 地面：只接收阴影，不显形，让脊有落影 */
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(40, 40),
-  new THREE.ShadowMaterial({ opacity: 0.07 })
+  new THREE.ShadowMaterial({ opacity: 0.045 })
 );
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
 const group = new THREE.Group();
-group.rotation.y = -0.26;
+group.rotation.y = -0.24;
 scene.add(group);
 
 const start = new Date(String(DATA.start) + 'T00:00:00');
@@ -69,6 +67,33 @@ function rangeOf(w) {
   return f(a) + ' – ' + f(b);
 }
 
+/* 脊面编号：Canvas 现画竖排小字 NO.09，不用任何外部字体。
+   参考图里每根脊的窄面都印着编号，字很小很淡——那是"档案"这个概念的锚点。 */
+function makeNoTexture(n) {
+  const cw = 48, ch = 400;
+  const cv = document.createElement('canvas');
+  cv.width = cw;
+  cv.height = ch;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#f7f5f0';
+  g.fillRect(0, 0, cw, ch);
+  const text = 'NO.' + String(n).padStart(2, '0');
+  const chars = text.split('');
+  /* 编号只占脊面上方一小段（参考图里约 1/8 脊高），不是铺满整根。
+     间距过大会变成"撒了一把点"，第一版就是那样。 */
+  const step = 11;
+  const top = 46;
+  g.font = '500 10px "Helvetica Neue", Arial, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#8f8a80';
+  chars.forEach((c, i) => g.fillText(c, cw / 2, top + step * i));
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 const bodyGeo = new THREE.BoxGeometry(W, H, T);
 const capGeo = new THREE.BoxGeometry(W * 0.82, 0.022, T * 0.82);
 
@@ -80,33 +105,40 @@ const pickables = [];
    颜色不能贴近背景 #e8e5e1，否则远处那排看着像半透明；实测它们 op=1 完全不透明，
    纯粹是明度太接近才产生的错觉。 */
 const decorMat = new THREE.MeshStandardMaterial({
-  color: 0xb9b2a4, roughness: 0.94, metalness: 0
+  color: 0xcac3b5, roughness: 0.94, metalness: 0
 });
 function pseudo(n) {
   const x = Math.sin(n * 12.9898) * 43758.5453;
   return x - Math.floor(x);
 }
-/* 只放在真脊**后方**（远离相机一侧）。放前面会挡住真脊，喧宾夺主。 */
-for (let r = 1; r <= DECOR_ROWS; r++) {
-  const n = maxWeek - 4;                     // 比真脊少几列，退进画面里不溢出
-  for (let c = 0; c < n; c++) {
-    const seed = r * 100 + c * 7;
-    const h = H * (0.46 + pseudo(seed) * 0.22);   // 明显矮于真脊
+/* 装饰脊：填满 6×3 网格的空位，再往前、后各补一排，让整片连贯。
+   高度只做轻微错落（0.86~1.0 倍），**不能矮太多**——矮到一半就从"卡纸"变成"积木"了。 */
+const rowOf = w => Math.floor((w - 1) / COLS);
+const colOf = w => (w - 1) % COLS;
+const ROWS = Math.ceil(maxWeek / COLS);
+const taken = new Set();
+for (let w = 1; w <= maxWeek; w++) taken.add(rowOf(w) + ',' + colOf(w));
+
+for (let r = -1; r <= ROWS; r++) {
+  for (let c = 0; c < COLS; c++) {
+    if (taken.has(r + ',' + c)) continue;
+    const seed = (r + 3) * 97 + c * 13;
+    const h = H * (0.86 + pseudo(seed) * 0.14);
     const m = new THREE.Mesh(bodyGeo, decorMat);
     m.scale.set(1, h / H, 1);
-    const cx = (c - (n - 1) / 2) * GAP_X;
-    m.position.set(cx, h / 2, -r * GAP_Z);   // 相机在 +z，后方即 -z
-    m.castShadow = false;          // 装饰脊几十根，全投影会糊掉画面右下角
+    const cx = (c - (COLS - 1) / 2) * GAP_X;
+    m.position.set(cx, h / 2, (r - (ROWS - 1) / 2) * GAP_Z);
+    m.castShadow = false;
     m.receiveShadow = true;
     group.add(m);
   }
 }
 
 for (let w = 1; w <= maxWeek; w++) {
-  const col = w - 1;
-  const row = 0;
-  const cx = (col - (maxWeek - 1) / 2) * GAP_X;
-  const cz = 0;
+  const col = colOf(w);
+  const row = rowOf(w);
+  const cx = (col - (COLS - 1) / 2) * GAP_X;
+  const cz = (row - (ROWS - 1) / 2) * GAP_Z;
 
   const list = weekCourses(w);
   const busy = list.length > 0;
@@ -114,13 +146,14 @@ for (let w = 1; w <= maxWeek; w++) {
   const baseOpacity = busy ? 1 : 0.82;
 
   const side = new THREE.MeshStandardMaterial({
-    color: 0xded9d0, roughness: 0.88, metalness: 0, transparent: true, opacity: baseOpacity
+    color: 0xe9e5dc, roughness: 0.88, metalness: 0, transparent: true, opacity: baseOpacity
   });
   const face = new THREE.MeshStandardMaterial({
-    color: 0xf4f1ea, roughness: 0.9, metalness: 0, transparent: true, opacity: baseOpacity
+    color: 0xffffff, roughness: 0.9, metalness: 0, transparent: true, opacity: baseOpacity,
+    map: makeNoTexture(w),
   });
   const top = new THREE.MeshStandardMaterial({
-    color: 0xf7f4ee, roughness: 0.9, metalness: 0, transparent: true, opacity: baseOpacity
+    color: 0xfbf9f4, roughness: 0.9, metalness: 0, transparent: true, opacity: baseOpacity
   });
 
   const body = new THREE.Mesh(bodyGeo, [side, side, top, side, face, side]);
@@ -428,7 +461,7 @@ function placeCallout() {
 /* ---------- 尺寸 ---------- */
 function resize() {
   const aspect = innerWidth / innerHeight;
-  const viewH = Math.max(4.2, 3.5 / aspect);
+  const viewH = Math.max(3.55, 2.95 / aspect);
   camera.left = -viewH * aspect / 2;
   camera.right = viewH * aspect / 2;
   camera.top = viewH / 2;
