@@ -2,3 +2,6 @@ mcp>=1.0.0
 requests>=2.31.0
 Pillow>=10.0.0
 pycryptodome>=3.20.0
+
+# 只有要把教务系统导出的 .xls 转成 courses.json 时才需要（tools/convert_xls.py）
+xlrd>=2.0.0

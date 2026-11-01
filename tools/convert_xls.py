@@ -211,8 +211,42 @@ def parse_cell(cell_text):
     return courses
 
 
-def convert(filepath):
-    """主转换函数"""
+# 复姓表：只列常见的，判不出来就按单姓取首字，宁可粗一点也不要漏
+COMPOUND_SURNAMES = ('欧阳', '司马', '上官', '诸葛', '东方', '独孤', '慕容', '令狐',
+                     '皇甫', '尉迟', '公孙', '长孙', '宇文', '司徒', '夏侯', '轩辕',
+                     '端木', '澹台', '南宫', '西门')
+
+
+def mask_teacher(name):
+    """教师姓名 → 姓 + 老师。多位老师用「、」分隔后各自处理。
+
+    只保留姓氏是刻意的：课表要能看出「这门课是谁带的」，但不需要知道全名。
+    赵磊 → 赵老师；欧阳修 → 欧阳老师；空值原样返回。
+    """
+    name = (name or '').strip()
+    if not name:
+        return ''
+    out = []
+    for part in re.split(r'[,，、/;；\s]+', name):
+        part = part.strip()
+        if not part:
+            continue
+        for c in COMPOUND_SURNAMES:
+            if part.startswith(c) and len(part) > len(c):
+                out.append(c + '老师')
+                break
+        else:
+            out.append(part[0] + '老师')
+    return '、'.join(out)
+
+
+def convert(filepath, start=None, mask_teachers=False):
+    """主转换函数
+
+    start:     学期首周周一 YYYY-MM-DD。导出文件里只有「打印日期」，它可能是学期中
+               任意一天，拿来当学期起点会让整学期错位，所以能从外面指定就指定。
+    mask_teachers: 教师姓名换成「姓 + 老师」，其余字段一概不动。
+    """
     rows = read_excel(filepath)
 
     # 找到课表网格: Row 2 是表头 = 星期一~星期日
@@ -307,33 +341,48 @@ def convert(filepath):
             if m:
                 semester_start = m.group(1)
 
+    if start:
+        semester_start = start
+    elif semester_start:
+        print(f'注意: 未指定 --start，学期起点取自「打印日期」{semester_start}，'
+              f'这通常是学期中的某一天，算出来的周次会整体偏移。', file=sys.stderr)
+
+    if mask_teachers:
+        for c in all_courses:
+            c['teacher'] = mask_teacher(c.get('teacher'))
+
     return {
         'meta': {
             'student': student_info,
             'semester': semester_info,
             'semesterStart': semester_start,
             'convertTime': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'totalCourses': len(all_courses)
+            # 时段数 ≠ 课程数：一门课一周可能上 3 次
+            'totalCourses': len({c['name'] for c in all_courses}),
+            'totalSlots': len(all_courses),
+            'teacherMasked': bool(mask_teachers),
         },
         'courses': all_courses
     }
 
 
 def main():
-    if len(sys.argv) < 2:
-        print('用法: python convert_xls.py <课表文件.xls/xlsx>')
-        print('示例: python convert_xls.py 学生个人课表_24690307.xlsx')
+    import argparse
+    p = argparse.ArgumentParser(description='教务系统课表 .xls → courses.json')
+    p.add_argument('filepath', help='导出的 .xls / .xlsx')
+    p.add_argument('--out', help='输出 JSON 路径（默认写在输入文件旁边）')
+    p.add_argument('--start', help='学期首周周一 YYYY-MM-DD（强烈建议指定）')
+    p.add_argument('--mask-teacher', action='store_true', dest='mask_teacher',
+                   help='教师姓名换成「姓 + 老师」，其余内容原样保留')
+    args = p.parse_args()
+
+    if not os.path.exists(args.filepath):
+        print(f'错误: 文件不存在 - {args.filepath}')
         sys.exit(1)
 
-    filepath = sys.argv[1]
-    if not os.path.exists(filepath):
-        print(f'错误: 文件不存在 - {filepath}')
-        sys.exit(1)
-
-    print(f'正在解析: {filepath}')
-
+    print(f'正在解析: {args.filepath}')
     try:
-        result = convert(filepath)
+        result = convert(args.filepath, start=args.start, mask_teachers=args.mask_teacher)
     except Exception as e:
         print(f'解析失败: {e}')
         import traceback
@@ -344,25 +393,17 @@ def main():
         print(f'错误: {result["error"]}')
         sys.exit(1)
 
-    # 输出 JSON
-    outpath = os.path.splitext(filepath)[0] + '_courses.json'
+    outpath = args.out or os.path.splitext(args.filepath)[0] + '_courses.json'
     with open(outpath, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    print(f'\n转换成功!')
+    print('\n转换成功!')
     print(f'  学生: {result["meta"]["student"]}')
     print(f'  学期: {result["meta"]["semester"]}')
-    print(f'  课程数: {result["meta"]["totalCourses"]}')
+    print(f'  {result["meta"]["totalSlots"]} 个上课时段 · {result["meta"]["totalCourses"]} 门课')
+    print(f'  学期起点: {result["meta"]["semesterStart"] or "(未设置)"}')
+    print(f'  教师姓名: {"已改为「姓+老师」" if args.mask_teacher else "原样保留"}')
     print(f'  输出文件: {outpath}')
-
-    # 显示课程预览
-    print(f'\n--- 课程列表 ---')
-    for i, c in enumerate(result['courses'], 1):
-        weeks_str = ','.join(map(str, c['weeks'][:5]))
-        if len(c['weeks']) > 5:
-            weeks_str += '...'
-        wt = {'all': '每周', 'odd': '单周', 'even': '双周'}.get(c['weekType'], '')
-        print(f'{i:2}. {c["name"]:　<12s} | {c["teacher"]:　<8s} | 周{c["day"]} {c["startPeriod"]:02d}-{c["endPeriod"]:02d}节 | {wt} | {weeks_str} | {c["location"]}')
 
 
 if __name__ == '__main__':

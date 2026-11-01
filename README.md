@@ -76,6 +76,28 @@ python tools/build_single.py --date 2026-11-02   # 把某天当作"今天"，截
 | `GET /api/ask?q=…` | 自然语言问答，返回 `{intent, text, data}` |
 | `GET /api/export.ics` | 日历订阅 |
 
+## 导入你自己的课表
+
+教务系统导出的「学生个人课表」xls 可以直接转成本项目的数据格式：
+
+```bash
+# 1. 解析（--start 是学期首周周一，必须自己给，见下）
+python tools/convert_xls.py 学生个人课表.xls --start 2026-08-31 --out config/mine.json
+
+# 2. 打包成单文件
+python tools/build_single.py --courses config/mine.json --out dist/我的课表.html
+```
+
+**`--start` 为什么必须手动给**：导出文件里只有「打印日期」，而打印日期可能是学期中
+任意一天（本人这份是 2026-11-01，第 10 周）。拿它当学期起点，整学期的周次会偏移九周。
+
+**`--mask-teacher`**：把教师姓名换成「姓 + 老师」（`刘波涛` → `刘老师`，复姓保留
+`欧阳修` → `欧阳老师`），其余字段一律不动。仓库里的 `config/demo-courses.json` 就是
+这样生成的 —— 它同时是 GitHub Pages 演示页的数据源，所以不含任何教师全名。
+
+解析器复用自微信小程序项目 `WXClassTable` 的 `tools/convert_xls.py`，这里只加了
+`--out` / `--start` / `--mask-teacher` 三个参数，解析逻辑没动。
+
 ## 架构
 
 ```

@@ -136,8 +136,9 @@ def main():
     size = os.path.getsize(out) / 1024
     week = semester.current_week(today or datetime.date.today(), semester.resolve_start())
     print(f'已生成 {out}')
-    print(f'  {size:.0f} KB · {len(payload["courses"])} 门课 · {payload["maxWeek"]} 周 · '
-          f'当前第 {week} 周')
+    names = {c['name'] for c in payload['courses']}
+    print(f'  {size:.0f} KB · {len(names)} 门课 / {len(payload["courses"])} 个时段 · '
+          f'{payload["maxWeek"]} 周 · 当前第 {week} 周')
     print('  双击打开即可，不需要联网、不需要装任何东西。')
 
 

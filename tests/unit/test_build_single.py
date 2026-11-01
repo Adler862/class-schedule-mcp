@@ -163,7 +163,18 @@ class PagesArtifactTest(unittest.TestCase):
             self.skipTest('docs/index.html 尚未生成')
         with open(path, 'r', encoding='utf-8', newline='') as f:
             actual = f.read().replace('\r\n', '\n')
-        expected = bs.render(bs.build_data())
+
+        # 线上演示用的是脱敏后的真实课表，不是单测那套 8 门课的样例数据
+        demo = os.path.join(ROOT, 'config', 'demo-courses.json')
+        saved, semester.COURSES_JSON = semester.COURSES_JSON, demo
+        semester._cache.clear()
+        try:
+            expected = bs.render(bs.build_data())
+        finally:
+            semester.COURSES_JSON = saved
+            semester._cache.clear()
+
         if actual != expected:
             self.fail('docs/index.html 与当前代码构建结果不一致。\n'
-                      '重新生成：python tools/build_single.py --out docs/index.html')
+                      '重新生成：python tools/build_single.py '
+                      '--courses config/demo-courses.json --out docs/index.html')
