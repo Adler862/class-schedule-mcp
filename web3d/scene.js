@@ -3,12 +3,13 @@
 import * as THREE from 'three';
 
 const DATA = window.DATA || { courses: [], maxWeek: 17, start: '2026-08-31' };
-const COLS = 6;
-/* 参考图里是一整片几乎无缝的脊，不是一横排。
-   17 本真脊按 6 列铺成 3 行，空位与前后各一排用装饰脊补齐，让纵深也看不到断口。 */
-const W = 0.19, H = 1.80, T = 0.32;
-const GAP_X = 0.232, GAP_Z = 0.60;
-const LIFT = 0.70, PULL = 0.13;
+const COLS = 24;                // 一排 24 根，铺满横向
+/* 参考图里的脊不是"书"，是**极长的长条板**：脊背很窄（W）、高度中等（H）、
+   深度方向延伸出去很远（T）。一排平行铺开，靠透视形成"一片"的观感。
+   之前 T=0.32 做成的是"书"，怎么调角度都不像。 */
+const W = 0.17, H = 1.25, T = 5.4;
+const GAP_X = 0.195;
+const LIFT = 0.62, PULL = 0.0;
 
 const canvas = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -17,9 +18,11 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-const camera = new THREE.OrthographicCamera(-4, 4, 2.6, -2.6, 0.1, 100);
-camera.position.set(3.4, 7.4, 8.8);
-camera.lookAt(0.10, 0.80, 0);
+/* 透视相机：参考图的近大远小很明显，正交投影出来是一排等宽的平行条带，
+   完全没有那个纵深。fov 压小一点（长焦感），俯角约 14°。 */
+const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+camera.position.set(-1.95, 3.5, 7.9);
+camera.lookAt(0.42, 0.10, -1.5);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
 const key = new THREE.DirectionalLight(0xfffdf8, 2.2);
@@ -81,9 +84,9 @@ function makeNoTexture(n) {
   const chars = text.split('');
   /* 编号只占脊面上方一小段（参考图里约 1/8 脊高），不是铺满整根。
      间距过大会变成"撒了一把点"，第一版就是那样。 */
-  const step = 11;
-  const top = 46;
-  g.font = '500 10px "Helvetica Neue", Arial, sans-serif';
+  const step = 8;
+  const top = 40;
+  g.font = '500 7.5px "Helvetica Neue", Arial, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = '#8f8a80';
@@ -105,7 +108,7 @@ const pickables = [];
    颜色不能贴近背景 #e8e5e1，否则远处那排看着像半透明；实测它们 op=1 完全不透明，
    纯粹是明度太接近才产生的错觉。 */
 const decorMat = new THREE.MeshStandardMaterial({
-  color: 0xcac3b5, roughness: 0.94, metalness: 0
+  color: 0xdcd6ca, roughness: 0.94, metalness: 0
 });
 function pseudo(n) {
   const x = Math.sin(n * 12.9898) * 43758.5453;
@@ -113,32 +116,32 @@ function pseudo(n) {
 }
 /* 装饰脊：填满 6×3 网格的空位，再往前、后各补一排，让整片连贯。
    高度只做轻微错落（0.86~1.0 倍），**不能矮太多**——矮到一半就从"卡纸"变成"积木"了。 */
-const rowOf = w => Math.floor((w - 1) / COLS);
 const colOf = w => (w - 1) % COLS;
-const ROWS = Math.ceil(maxWeek / COLS);
-const taken = new Set();
-for (let w = 1; w <= maxWeek; w++) taken.add(rowOf(w) + ',' + colOf(w));
+const rowOf = w => Math.floor((w - 1) / COLS);
 
-for (let r = -1; r <= ROWS; r++) {
-  for (let c = 0; c < COLS; c++) {
-    if (taken.has(r + ',' + c)) continue;
-    const seed = (r + 3) * 97 + c * 13;
-    const h = H * (0.86 + pseudo(seed) * 0.14);
-    const m = new THREE.Mesh(bodyGeo, decorMat);
-    m.scale.set(1, h / H, 1);
-    const cx = (c - (COLS - 1) / 2) * GAP_X;
-    m.position.set(cx, h / 2, (r - (ROWS - 1) / 2) * GAP_Z);
-    m.castShadow = false;
-    m.receiveShadow = true;
-    group.add(m);
-  }
+/* 装饰：只补同一排的空位。
+   脊长 7 个单位，前后再排一层会直接穿模，所以不做"多排"。 */
+const taken = new Set();
+for (let w = 1; w <= maxWeek; w++) taken.add(colOf(w));
+
+for (let c = 0; c < COLS; c++) {
+  if (taken.has(c)) continue;
+  const seed = c * 13 + 7;
+  const h = H * (0.88 + pseudo(seed) * 0.12);
+  const m = new THREE.Mesh(bodyGeo, decorMat);
+  m.scale.set(1, h / H, 1);
+  const cx = (c - (COLS - 1) / 2) * GAP_X;
+  m.position.set(cx, h / 2, 0);
+  m.castShadow = false;
+  m.receiveShadow = true;
+  group.add(m);
 }
 
 for (let w = 1; w <= maxWeek; w++) {
   const col = colOf(w);
-  const row = rowOf(w);
+  const row = 0;
   const cx = (col - (COLS - 1) / 2) * GAP_X;
-  const cz = (row - (ROWS - 1) / 2) * GAP_Z;
+  const cz = 0;
 
   const list = weekCourses(w);
   const busy = list.length > 0;
@@ -460,12 +463,7 @@ function placeCallout() {
 
 /* ---------- 尺寸 ---------- */
 function resize() {
-  const aspect = innerWidth / innerHeight;
-  const viewH = Math.max(3.55, 2.95 / aspect);
-  camera.left = -viewH * aspect / 2;
-  camera.right = viewH * aspect / 2;
-  camera.top = viewH / 2;
-  camera.bottom = -viewH / 2;
+  camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
 }
@@ -525,10 +523,9 @@ function tick(now) {
   }
 
   /* 面板打开时场景略退，给底部面板让出层次感 */
-  const zoomTarget = sheetOpen ? 0.93 : 1;
-  if (Math.abs(camera.zoom - zoomTarget) > 0.001) {
-    camera.zoom += (zoomTarget - camera.zoom) * Math.min(1, dt * 8);
-    camera.updateProjectionMatrix();
+  const distTarget = sheetOpen ? 6.95 : 6.4;
+  if (Math.abs(camera.position.z - distTarget) > 0.002) {
+    camera.position.z += (distTarget - camera.position.z) * Math.min(1, dt * 8);
   }
 
   camera.updateMatrixWorld();
