@@ -1,6 +1,5 @@
 /* 课程档案 · 3D 课表 */
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const data = window.DATA || { meta: {}, courses: [], periodTimes: {} };
 const courses = Array.isArray(data.courses) ? data.courses : [];
@@ -40,8 +39,8 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-6, 6, 4.5, -4.5, 0.1, 100);
-camera.position.set(9, 15, 16);
-camera.lookAt(0, 0.55, 0);
+camera.position.set(9.5, 11, 16);
+camera.lookAt(0, 1.05, 0);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd8d3ca, 2.0));
 const key = new THREE.DirectionalLight(0xffffff, 2.35);
@@ -75,29 +74,12 @@ shadow.position.y = -0.012;
 shadow.receiveShadow = true;
 scene.add(shadow);
 
-/* 档案脊用 Blender 导出的 GLB（带倒角与顶部标签凹槽）。
-   先用几何体建好场景，模型解析完再把几何体换掉——IIFE 里不能用顶层 await。 */
+/* 档案脊用几何体。
+   Blender 那边确实导出了一根带倒角的 spine.glb（web3d/models/，8.4KB），
+   但接进来实测两个问题：一是 glTF 的 Y-up 转换挂在节点旋转上，只取 geometry 会丢朝向，
+   薄片会躺平；二是这个尺度下倒角只有几个像素，视觉上和 Box 没区别，却要多 92KB。
+   所以 3D 页保持几何体，模型文件留在仓库里作为建模管线的产物。 */
 const bodyGeometry = new THREE.BoxGeometry(0.46, 2.05, 1.08);
-if (window.SPINE && window.SPINE.length) {
-  try {
-    const bin = atob(window.SPINE);
-    const buf = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-    new GLTFLoader().parse(buf.buffer, '', (gltf) => {
-      const src = gltf.scene.getObjectByProperty('isMesh', true);
-      if (!src) return;
-      const g = src.geometry.clone();
-      g.scale(1.32, 1.32, 1.32);   // 0.34×1.9×1.1 → 0.46×2.05×1.08，和原几何体对齐
-      g.computeVertexNormals();
-      scene.traverse((o) => {
-        if (o.isMesh && o.geometry === bodyGeometry) o.geometry = g;
-      });
-      bodyGeometry.dispose();
-    });
-  } catch (e) {
-    console.warn('GLB 解析失败，保留几何体', e);
-  }
-}
 
 const markerGeometry = new THREE.BoxGeometry(0.34, 0.045, 0.22);
 const courseBySlot = new Map();
@@ -305,7 +287,8 @@ function updateAxes() {
 
 function resize() {
   const aspect = innerWidth / innerHeight;
-  const viewHeight = Math.max(8.7, 7.7 / aspect);
+  // 阵列投影约 8.3 宽 × 5.5 高，收紧到 5.6 高刚好铺满，留一点边
+  const viewHeight = Math.max(5.6, 5.4 / aspect);
   camera.left = -viewHeight * aspect / 2;
   camera.right = viewHeight * aspect / 2;
   camera.top = viewHeight / 2;
