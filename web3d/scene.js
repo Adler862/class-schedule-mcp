@@ -388,12 +388,14 @@ function springDamp(s, target, rate, dt) {
   s.velocity = (s.velocity - rate * impulse * dt) * decay;
 }
 
-/* 邻脊被"带起来"的幅度：按距离延迟 + 衰减振荡，像手指扫过一排档案。 */
+/* 邻脊被"带起来"的幅度：按距离延迟 + 衰减振荡，像手指扫过一排档案。
+   衰减系数从 0.55 收到 0.26、尾巴从 2.4s 放到 3.2s——照 motion.ts 的包络，
+   原来只有紧挨着的一两根动，远一点完全静止，整片看起来还是死的。 */
 function neighborWave(distance, age) {
-  const t = age - Math.abs(distance) * 0.05;
-  if (t <= 0 || t > 2.4) return 0;
-  const env = smooth(t / 0.12) * Math.exp(-t * 1.9);
-  return (env * Math.cos(t * 7.4)) / (1 + Math.abs(distance) * 0.55);
+  const t = age - Math.abs(distance) * 0.045;
+  if (t <= 0 || t > 3.2) return 0;
+  const env = smooth(t / 0.12) * Math.exp(-t * 1.45);
+  return (env * Math.cos(t * 7.2)) / (1 + Math.abs(distance) * 0.26);
 }
 
 /* 空闲呼吸：两个不同周期的正弦叠加，相邻脊错相，肉眼看不出但整架是活的 */
@@ -480,13 +482,65 @@ function setText(id, txt) {
   if (n) n.textContent = txt;
 }
 
+/* ---------- 滚动编号 ----------
+   周次不是"换一个数字"，而是滚过去。每格是一条 0–9 的竖带（两份首尾相接，
+   越过边界时先无动画平移一份，再接上），换周时整条平移。 */
+function mountRoll(id, digits) {
+  const el = E(id);
+  if (!el) return;
+  let html = '';
+  for (let i = 0; i < digits; i++) {
+    html += '<i>';
+    for (let copy = 0; copy < 2; copy++) {
+      for (let d = 0; d < 10; d++) html += '<b>' + d + '</b>';
+    }
+    html += '</i>';
+  }
+  el.innerHTML = html;
+  el.__roll = {
+    reels: [...el.children],
+    pos: new Array(digits).fill(10),
+    set: new Array(digits).fill(-1),
+  };
+}
+
+function rollTo(id, value) {
+  const el = E(id);
+  const st = el && el.__roll;
+  if (!st) return;
+  const str = String(Math.max(0, value)).padStart(st.reels.length, '0');
+  st.reels.forEach((r, i) => {
+    const d = +str[i];
+    if (st.set[i] === d) return;
+    st.set[i] = d;
+    const cur = st.pos[i];
+    const curD = ((cur % 10) + 10) % 10;
+    let step = d - curD;
+    if (step > 5) step -= 10;
+    if (step < -5) step += 10;
+    let next = cur + step;
+    /* 快到头了就先无动画平移一整份（同余，看不出来），再接下一段 */
+    if (next > 18 || next < 2) {
+      const shift = next > 18 ? -10 : 10;
+      const base = cur + shift;
+      r.style.transition = 'none';
+      r.style.transform = 'translateY(-' + base + 'em)';
+      void r.offsetWidth;
+      r.style.transition = '';
+      next = base + step;
+    }
+    st.pos[i] = next;
+    r.style.transform = 'translateY(-' + next + 'em)';
+  });
+}
+
 function paintOverlay() {
   const week = selected + 1;
   const list = weekCourses(week);
   setText('idx', '(' + maxWeek + ')');
-  setText('bigNum', pad2(week));
+  rollTo('bigNum', week);
   setText('totalNum', '/ ' + pad2(maxWeek));
-  setText('colNum', pad2(week));
+  rollTo('colNum', week);
   setText('colTotal', '/ ' + pad2(maxWeek));
   setText('slotName', '第 ' + week + ' 周 · ' + rangeOf(week));
   setText('callWeek', 'WEEK ' + pad2(week));
@@ -687,7 +741,7 @@ function openWeekSheet(week) {
 
   setText('wsFile', 'FILE W-' + pad2(week));
   setText('wsArea', list.length ? 'TIMETABLE AREA' : 'EMPTY WEEK');
-  setText('wsTitle', '第 ' + pad2(week) + ' 周');
+  rollTo('wsNum', week);
   setText('wsRange', cnRange(week));
   setText('wsCat', list.length ? '常规教学周' : '本周无排课');
   setText('capNum', 'NO.' + pad2(week));
@@ -870,7 +924,7 @@ function tick(now) {
 
     let target = w;
     if (!reduce && !isFocus) {
-      target += neighborWave(r.col - focusRail.col, age) * 0.28;
+      target += neighborWave(r.col - focusRail.col, age) * 0.22;
     }
     if (!reduce) target += idleBreath(r.col, time);
     if (reduce) { r.spring.value = target; r.spring.velocity = 0; }
@@ -948,6 +1002,9 @@ function tick(now) {
 }
 
 addEventListener('error', function (e) { document.title = 'ERR ' + e.message; });
+mountRoll('bigNum', 2);
+mountRoll('colNum', 2);
+mountRoll('wsNum', 2);
 paintOverlay();
 
 /* ?w=9 直接停在某一周并展开——深链接，也是截图调试用的入口 */

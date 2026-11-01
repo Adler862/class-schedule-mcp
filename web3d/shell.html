@@ -26,6 +26,14 @@
   body.sheet-open #callout{opacity:0}
 
   .tag{font-size:10px;letter-spacing:1.8px;color:#6f6c64}
+
+  /* 滚动编号：每一格数字是一条 0–9 的竖带，换周时整条平移过去。
+     RhineLabUI 用 Rolling Number 做同一件事——数字不是"换掉"，而是"滚过去"。 */
+  .rn{display:inline-flex;overflow:hidden;line-height:1;height:1em;
+      font-weight:inherit;letter-spacing:inherit}
+  .rn > i{display:block;height:1em;
+      transition:transform 480ms cubic-bezier(.22,1,.36,1)}
+  .rn > i > b{display:block;height:1em;font-weight:inherit;font-variant-numeric:tabular-nums}
   .num{font-variant-numeric:tabular-nums}
 
   /* 左上标题 */
@@ -363,11 +371,11 @@
 
   <div class="sel">
     <div class="tag">ARCHIVE / SELECT</div>
-    <div class="n"><b id="bigNum">09</b><s id="totalNum">/ 17</s></div>
+    <div class="n"><b id="bigNum" class="rn"></b><s id="totalNum">/ 17</s></div>
   </div>
 
   <div class="foot">
-    <div class="col">WEEK <b id="colNum">09</b> <span id="colTotal">/ 17</span></div>
+    <div class="col">WEEK <b id="colNum" class="rn"></b> <span id="colTotal">/ 17</span></div>
     <div class="strip" id="strip"><div class="stripIn" id="stripIn"></div></div>
     <div class="nm" id="slotName">第 9 周</div>
   </div>
@@ -412,7 +420,7 @@
       <span id="wsArea">TIMETABLE AREA</span>
     </div>
 
-    <h2 id="wsTitle">第 09 周</h2>
+    <h2 id="wsTitle">第 <b id="wsNum" class="rn"></b> 周</h2>
     <div class="cnline">
       <span id="wsRange">10/26 – 11/01</span>
       <span id="wsCat">常规教学周</span>
