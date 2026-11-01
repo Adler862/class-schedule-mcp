@@ -54,8 +54,16 @@
     will-change:transform;pointer-events:none;
   }
   #callout .dot{position:absolute;left:-3px;top:-3px;width:6px;height:6px;background:#151713}
-  #callout .line{position:absolute;left:0;top:0;width:300px;height:1px;background:#151713;opacity:.55}
-  #callout .box{position:absolute;left:14px;top:-40px;width:290px}
+  #callout .line{
+    position:absolute;left:calc(var(--lx, 0px));top:0;
+    width:300px;height:1px;background:#151713;opacity:.55;
+  }
+  #callout .box{
+    position:absolute;left:calc(22px + var(--ox, 0px));top:calc(-58px + var(--fy, 0px));
+    width:290px;padding:8px 11px 9px;
+    background:rgba(232,229,225,.94);
+    border-left:1.5px solid #151713;
+  }
   #callout .box .k{font-size:10px;letter-spacing:1.8px;color:#6f6c64}
   #callout .box .w{
     font-size:26px;font-weight:600;letter-spacing:.01em;margin:3px 0 2px;
@@ -63,7 +71,8 @@
   }
   #callout .box .meta{font-size:11px;color:#6f6c64;letter-spacing:1px}
   #callout .act{
-    position:absolute;left:14px;top:16px;display:flex;align-items:center;gap:10px;
+    position:absolute;left:calc(22px + var(--ox, 0px));top:calc(34px + var(--fy, 0px));
+    display:flex;align-items:center;gap:10px;
   }
   #callout .act .line2{width:196px;height:1px;background:#151713;opacity:.35}
   #callout .act a{
@@ -71,7 +80,7 @@
     pointer-events:auto;border-bottom:1px solid #151713;padding-bottom:1px;
   }
   #callout .act a:hover{color:#a67d48;border-color:#a67d48}
-  #callout .cnt{position:absolute;left:14px;top:34px;font-size:9px;letter-spacing:1.6px;color:#8f8a80}
+
 
   @media (max-width:560px){
     .brand h1{font-size:17px}
@@ -104,7 +113,7 @@
   </div>
 
   <div class="foot">
-    <div class="col">COLUMN <b id="colNum">02</b> <span id="colTotal">/ 06</span></div>
+    <div class="col">WEEK <b id="colNum">09</b> <span id="colTotal">/ 17</span></div>
     <div class="nm" id="slotName">第 9 周</div>
   </div>
 
@@ -124,7 +133,6 @@
       <span class="line2"></span>
       <a id="callLink" href="index.html">打开课表 →</a>
     </div>
-    <div class="cnt" id="callCount">SECTIONS</div>
   </div>
 </div>
 

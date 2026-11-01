@@ -125,15 +125,24 @@ python tools/build_single.py --courses config/mine.json --out dist/我的课表.
 
 在线看：<https://adler862.github.io/class-schedule-mcp/3d.html>
 
-一排立着的白色薄片是档案脊，7 列 × 6 行对应一周六天... 对应七天与六个大节；
-有课的槽位是高脊并带一枚低饱和色标，没课的只剩一条矮刻痕——扫一眼就知道哪天有空。
-点一根脊，它会从阵列里被抽出来、抬向观者、摊平成一张可读的课程卡。
+**一本脊 = 一周**，17 本横排立在架上；后方两排更矮的装饰脊撑出"档案库"的密度
+（参考壁纸里看着几十根，但它的索引写的是 `ARCHIVE INDEX (7)`——真档案只有个位数，
+密度来自背景脊）。有课的周是高脊并带一枚低饱和色标，没课的缩到 62% 并淡下去。
+
+选中的那本**原位抬起一截**，从它顶部拉一条细引线到画面空白处，标注周次、日期、
+这一周几门课几节，以及一个跳回表格版 `index.html?w=N` 的链接。引线会自动选空白一侧
+（脊在中线右侧就往左拉），不然文字免不了压住几根脊。
 
 ```bash
 cd web3d
 npm install          # three + esbuild，仅构建时需要
-npm run build        # → ../docs/3d.html（约 550 KB 单文件）
+npm run build        # → ../docs/3d.html（约 542 KB 单文件）
 ```
+
+构建时会校验 `config` 里的 `meta.semesterStart` 和课程的 `weeks`：缺了任何一个直接失败。
+这不是洁癖——少了 `start` 会让 `new Date("undefinedT00:00:00")` 变成 Invalid Date，
+一路算到 `slots[NaN] === undefined`，覆盖层与引线全部静默失效，而模板里的静态默认文案
+（第 09 周 / WEEK 09）会假装一切正常。这个坑实实在在踩过一轮。
 
 **为什么要打包**：`three` 从 r160 起不再提供 UMD 构建，只有 ES module；而 `file://` 下
 `import` 会被 CORS 拦掉。所以用 esbuild 打成一个 IIFE 内联进 HTML，双击也能用。

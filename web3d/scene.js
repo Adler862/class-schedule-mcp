@@ -3,10 +3,14 @@
 import * as THREE from 'three';
 
 const DATA = window.DATA || { courses: [], maxWeek: 17, start: '2026-08-31' };
-const COLS = 6;
-const W = 0.30, H = 2.20, T = 1.00;
-const GAP_X = 0.34, GAP_Z = 1.04;
-const LIFT = 0.36, PULL = 0.25;
+const COLS = 1;                 // 真脊只有一排，横向铺满
+/* 参考图里看着有几十根脊，但它的索引写的是 ARCHIVE INDEX (7) / 01 / 08 ——
+   真档案只有个位数，密度来自前后几排**装饰脊**。所以这里也一样：
+   17 本真脊横排，前后各 2 排装饰，靠它们把"档案库"的密度撑起来。 */
+const W = 0.20, H = 1.66, T = 0.50;
+const GAP_X = 0.246, GAP_Z = 0.56;
+const DECOR_ROWS = 2;           // 前后各 2 排
+const LIFT = 0.82, PULL = 0.13;
 
 const canvas = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -16,8 +20,8 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-4, 4, 2.6, -2.6, 0.1, 100);
-camera.position.set(7.4, 8.2, 9.6);
-camera.lookAt(0, 1.15, 0);
+camera.position.set(5.8, 7.2, 7.6);
+camera.lookAt(-0.52, 0.88, -0.24);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
 const key = new THREE.DirectionalLight(0xfffdf8, 2.2);
@@ -36,14 +40,14 @@ scene.add(fill);
 /* 地面：只接收阴影，不显形，让脊有落影 */
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(40, 40),
-  new THREE.ShadowMaterial({ opacity: 0.10 })
+  new THREE.ShadowMaterial({ opacity: 0.07 })
 );
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
 const group = new THREE.Group();
-group.rotation.y = -0.34;
+group.rotation.y = -0.26;
 scene.add(group);
 
 const start = new Date(String(DATA.start) + 'T00:00:00');
@@ -67,21 +71,45 @@ function rangeOf(w) {
 
 const bodyGeo = new THREE.BoxGeometry(W, H, T);
 const capGeo = new THREE.BoxGeometry(W * 0.82, 0.022, T * 0.82);
-const slotGeo = new THREE.BoxGeometry(W * 0.86, 0.045, T * 0.9);
 
 const slots = [];
 const pickables = [];
 
+/* 装饰脊：没有交互、不可拾取，只是把画面填满。
+   高度按周次的伪随机数错开，让脊顶参差——整齐齐像柜子，参差才像被人翻过的档案架。 */
+const decorMat = new THREE.MeshStandardMaterial({
+  color: 0xd2ccc0, roughness: 0.94, metalness: 0
+});
+function pseudo(n) {
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+/* 只放在真脊**后方**（远离相机一侧）。放前面会挡住真脊，喧宾夺主。 */
+for (let r = 1; r <= DECOR_ROWS; r++) {
+  const n = maxWeek - 4;                     // 比真脊少几列，退进画面里不溢出
+  for (let c = 0; c < n; c++) {
+    const seed = r * 100 + c * 7;
+    const h = H * (0.46 + pseudo(seed) * 0.22);   // 明显矮于真脊
+    const m = new THREE.Mesh(bodyGeo, decorMat);
+    m.scale.set(1, h / H, 1);
+    const cx = (c - (n - 1) / 2) * GAP_X;
+    m.position.set(cx, h / 2, -r * GAP_Z);   // 相机在 +z，后方即 -z
+    m.castShadow = false;          // 装饰脊几十根，全投影会糊掉画面右下角
+    m.receiveShadow = true;
+    group.add(m);
+  }
+}
+
 for (let w = 1; w <= maxWeek; w++) {
-  const col = (w - 1) % COLS;
-  const row = Math.floor((w - 1) / COLS);
-  const cx = (col - (COLS - 1) / 2) * GAP_X;
-  const cz = (row - 1) * GAP_Z;
+  const col = w - 1;
+  const row = 0;
+  const cx = (col - (maxWeek - 1) / 2) * GAP_X;
+  const cz = 0;
 
   const list = weekCourses(w);
   const busy = list.length > 0;
-  const hRatio = busy ? 1 : 0.55;
-  const baseOpacity = busy ? 1 : 0.4;
+  const hRatio = busy ? 1 : 0.62;
+  const baseOpacity = busy ? 1 : 0.5;
 
   const side = new THREE.MeshStandardMaterial({
     color: 0xded9d0, roughness: 0.88, metalness: 0, transparent: true, opacity: baseOpacity
@@ -102,7 +130,7 @@ for (let w = 1; w <= maxWeek; w++) {
   holder.position.set(cx, (H * hRatio) / 2, cz);
   holder.add(body);
 
-  /* 脊顶色标：课程越多越深，饱和度压到 18% 左右 */
+  /* 脊顶色标：课程越多越深，饱和度压到 20% 左右 */
   const hue = [212, 350, 127, 264, 42, 180, 317, 95][w % 8];
   const light = busy ? Math.max(34, 62 - list.length * 4) : 70;
   const capMat = new THREE.MeshStandardMaterial({
@@ -185,11 +213,12 @@ function paintOverlay() {
   setText('idx', '(' + maxWeek + ')');
   setText('bigNum', pad(s.week));
   setText('totalNum', '/ ' + pad(maxWeek));
-  setText('colNum', pad(s.col + 1));
-  setText('colTotal', '/ ' + pad(COLS));
+  setText('colNum', pad(s.week));
+  setText('colTotal', '/ ' + pad(maxWeek));
   setText('slotName', '第 ' + s.week + ' 周 · ' + rangeOf(s.week));
   setText('callWeek', 'WEEK ' + pad(s.week));
-  setText('callRange', rangeOf(s.week) + ' · ' + list.length + ' 门课');
+  const names = new Set(list.map(c => c.name));
+  setText('callRange', rangeOf(s.week) + ' · ' + names.size + ' 门课 / ' + list.length + ' 节');
   setText('callCount', list.length ? list.length + ' SECTIONS' : 'NO CLASS');
   const a = E('callLink');
   if (a) a.href = 'index.html?w=' + s.week;
@@ -207,13 +236,22 @@ function placeCallout() {
   const x = (v.x * 0.5 + 0.5) * innerWidth;
   const y = (-v.y * 0.5 + 0.5) * innerHeight;
   box.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
+
+  /* 文字块永远摆到空白处，不压在脊上：
+     脊在中线右侧 → 文字整体翻到左边（左边那一片正好是空的），反之往右。
+     只翻转不挪位置的话，文字免不了要盖住某几根脊。 */
+  const toLeft = x > innerWidth * 0.46;
+  box.style.setProperty('--ox', toLeft ? '-352px' : '22px');
+  box.style.setProperty('--lx', toLeft ? '-300px' : '0px');
+  /* 垂直方向也别撞上左上角那三行标题：块顶至少落在 y=186 以下 */
+  box.style.setProperty('--fy', Math.max(0, 186 - y) + 'px');
   box.style.opacity = '1';
 }
 
 /* ---------- 尺寸 ---------- */
 function resize() {
   const aspect = innerWidth / innerHeight;
-  const viewH = Math.max(4.3, 3.5 / aspect);
+  const viewH = Math.max(4.2, 3.5 / aspect);
   camera.left = -viewH * aspect / 2;
   camera.right = viewH * aspect / 2;
   camera.top = viewH / 2;
@@ -238,7 +276,9 @@ function tick(now) {
     s.lift = reduce ? want : THREE.MathUtils.damp(s.lift, want, 12, dt);
 
     const px = s.baseX;
-    const pz = s.baseZ - PULL * s.lift;
+    /* 朝观者抽出（相机在 +z），不是往后推——往后推会被后排的装饰脊挡住，
+       "抽出"这个动作也就看不出来了。 */
+    const pz = s.baseZ + PULL * s.lift;
     const py = s.baseY + LIFT * s.lift + (s.busy ? 0 : 0);
     s.holder.position.set(px, py, pz);
 
