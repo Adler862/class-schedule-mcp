@@ -9,7 +9,7 @@ const COLS = 32;                // 够宽，左右两端都推出画面，看不
    之前 T=0.32 做成的是"书"，怎么调角度都不像。 */
 const W = 0.17, H = 1.30, T = 8.0;
 const GAP_X = 0.245;
-const LIFT = 0.62, PULL = 0.0;
+const LIFT = 1.15, PULL = 0.0;
 
 const canvas = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -446,21 +446,42 @@ function placeCallout() {
   const s = slots[selected];
   const box = E('callout');
   if (!s || !box) return;
-  s.holder.getWorldPosition(v);
-  v.y += (H * (s.busy ? 1 : 0.55)) / 2 + 0.06;
-  v.project(camera);
-  const x = (v.x * 0.5 + 0.5) * innerWidth;
-  const y = (-v.y * 0.5 + 0.5) * innerHeight;
-  box.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
 
-  /* 文字块永远摆到空白处，不压在脊上：
-     脊在中线右侧 → 文字整体翻到左边（左边那一片正好是空的），反之往右。
-     只翻转不挪位置的话，文字免不了要盖住某几根脊。 */
-  const toLeft = x > innerWidth * 0.46;
-  box.style.setProperty('--ox', toLeft ? '-352px' : '22px');
-  box.style.setProperty('--lx', toLeft ? '-300px' : '0px');
-  /* 垂直方向也别撞上左上角那三行标题：块顶至少落在 y=186 以下 */
-  box.style.setProperty('--fy', Math.max(0, 186 - y) + 'px');
+  s.holder.getWorldPosition(v);
+  v.y += (H * 1.25) / 2 + 0.06;
+  v.project(camera);
+  const px = (v.x * 0.5 + 0.5) * innerWidth;
+  const py = (-v.y * 0.5 + 0.5) * innerHeight;
+
+  /* 标注位置是**设计死的**，不跟着脊跑。
+     照 RhineLabUI 的做法：它的 .archive-callout 直接写死 left:970px; top:487px（1920 画布），
+     由物体去找它，所以永远不会压住内容。
+     这里同理——固定落在画面中上部的空白带，脊选中哪根都一样。 */
+  const wide = innerWidth >= 760;
+  const bx = wide ? Math.round(innerWidth * 0.40) : 24;
+  const by = wide ? Math.round(innerHeight * 0.20) : 96;
+  box.style.setProperty('--bx', bx + 'px');
+  box.style.setProperty('--by', by + 'px');
+
+  /* 端点方块画在脊顶，引线从标注左下角斜着连过去（宽度+rotate，纯 CSS 一条线） */
+  box.style.setProperty('--dx2', px.toFixed(1) + 'px');
+  box.style.setProperty('--dy2', py.toFixed(1) + 'px');
+
+  /* 引线是**水平**的，从方块向远处拉——参考图里那条线横贯半个画面，
+     方块在它的左端，文字浮在线的上方。斜线看着像"指向"，水平线才是"档案索引"的味道。 */
+  const line = box.querySelector('.line');
+  if (line) {
+    const ly = Math.max(py, by + 110);          // 别穿过文字块
+    const lx = px;
+    const lw = Math.max(180, innerWidth * 0.42);
+    line.style.left = lx + 'px';
+    line.style.top = ly + 'px';
+    line.style.width = lw.toFixed(0) + 'px';
+    line.style.transform = 'none';
+    box.style.setProperty('--dy2', ly.toFixed(1) + 'px');
+    /* 链接放在引线下方（参考图里 ACCESS FILE → 就在线下面） */
+    box.style.setProperty('--actTop', (ly - by + 13).toFixed(0) + 'px');
+  }
   box.style.opacity = '1';
 }
 

@@ -55,13 +55,16 @@
     position:absolute;left:0;top:0;opacity:0;
     will-change:transform;pointer-events:none;
   }
-  #callout .dot{position:absolute;left:-3px;top:-3px;width:6px;height:6px;background:#151713}
+  #callout .dot{
+    position:absolute;width:6px;height:6px;background:#151713;
+    left:var(--dx2,0px);top:var(--dy2,0px);margin:-3px 0 0 -3px;
+  }
   #callout .line{
-    position:absolute;left:calc(var(--lx, 0px));top:0;
-    width:300px;height:1px;background:#151713;opacity:.55;
+    position:absolute;left:0;top:0;width:1px;height:1px;
+    background:#151713;opacity:.5;transform-origin:0 0;
   }
   #callout .box{
-    position:absolute;left:calc(22px + var(--ox, 0px));top:calc(-58px + var(--fy, 0px));
+    position:absolute;left:var(--bx,40px);top:var(--by,120px);
     width:290px;padding:8px 11px 9px;
     background:rgba(232,229,225,.94);
     border-left:1.5px solid #151713;
@@ -73,7 +76,8 @@
   }
   #callout .box .meta{font-size:11px;color:#6f6c64;letter-spacing:1px}
   #callout .act{
-    position:absolute;left:calc(22px + var(--ox, 0px));top:calc(34px + var(--fy, 0px));
+    position:absolute;left:calc(var(--bx,40px) + 6px);
+    top:calc(var(--by,120px) + var(--actTop,92px));
     display:flex;align-items:center;gap:10px;
   }
   #callout .act .line2{width:196px;height:1px;background:#151713;opacity:.35}
@@ -247,7 +251,6 @@
       <div class="meta" id="callRange">10/26 – 11/01</div>
     </div>
     <div class="act">
-      <span class="line2"></span>
       <button id="callLink" type="button">打开课表 →</button>
     </div>
   </div>
