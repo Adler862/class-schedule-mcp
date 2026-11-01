@@ -109,7 +109,7 @@
 
   .grid{
     transform-style:preserve-3d;
-    transition:transform 380ms var(--ease);
+    transition:transform 380ms var(--ease), opacity 300ms var(--ease);
     will-change:transform;
   }
   .cell,.course,.ghead,.gt{
@@ -167,6 +167,57 @@
   header{animation:fadein .5s var(--ease) both}
   .weekbar{animation:fadein .5s var(--ease) .08s both}
   @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* ---------- 立体转场 ----------
+     用 animation 而不是 transition：animation 会临时压过内联 transform，
+     所以切周时不会被鼠标倾斜的残留角度干扰；结束后不留 fill，交还给正常状态。 */
+  /* 切周：旧的一张沉下去，新的一张从深处升上来，像一叠档案换了最上面那张 */
+  .grid.pushout{ animation:pushout 170ms var(--ease) forwards; }
+  .grid.pushin{ animation:pushin 320ms var(--ease); }
+  @keyframes pushout{
+    to{ transform:perspective(900px) translateZ(-90px) scale(.962); opacity:0 }
+  }
+  @keyframes pushin{
+    from{ transform:perspective(900px) translateZ(-130px) scale(.94); opacity:0 }
+    to{ transform:none; opacity:1 }
+  }
+
+  /* 抽出档案：真卡片飞出来的替身 */
+  .drawn{
+    position:fixed;z-index:60;margin:0;pointer-events:none;
+    transform-origin:center center;
+    transition:transform 420ms cubic-bezier(.2,.85,.25,1), opacity 240ms var(--ease);
+    will-change:transform;
+  }
+  .drawn.out{
+    transform:perspective(1000px) translate3d(var(--dx,0), var(--dy,0), 0)
+               translateZ(150px) rotateX(7deg) scale(var(--ds,1));
+  }
+  .drawn.fade{ opacity:0; }
+
+  /* 抽出时整个网格往后退 */
+  .grid.depth{
+    transform:perspective(1000px) translateZ(-70px) scale(.972);
+    opacity:.5;
+  }
+
+  /* 点开课程：块先抬起一下，再由面板从下方立体展开 */
+  .course.lift{ transform:scale(1.06); z-index:8; }
+  .sheet{
+    transform:perspective(1000px) translateY(20px) rotateX(9deg) scale(.97);
+    opacity:0; transform-origin:bottom center;
+    transition:transform 300ms var(--ease), opacity 220ms var(--ease);
+  }
+  .sheet.show{ transform:none; opacity:1; }
+  .scrim{ transition:opacity 240ms var(--ease); }
+
+  @media (prefers-reduced-motion:reduce){
+    .grid.pushout,.grid.pushin{animation:none}
+    .sheet{transition:none}
+    .course.lift{transform:none}
+    .drawn{transition:none}
+    .grid.depth{transform:none;opacity:1}
+  }
 
   @media (hover:none){
     .course:hover{transform:none;border-left-width:2px}
@@ -260,6 +311,17 @@
   .sheet::before{content:"";position:absolute;top:8px;right:22px;left:22px;height:1px;background:var(--line)}
   .sheet::after{content:"";position:absolute;top:5px;left:19px;width:6px;height:6px;background:var(--accent)}
   .sheet.show{transform:translateY(0)}
+  .sheet .kicker{
+    display:flex;align-items:center;gap:8px;
+    font-size:10px;letter-spacing:1.7px;color:var(--muted);
+    text-transform:uppercase;margin-bottom:10px;
+  }
+  .sheet .kicker::before{content:"";width:6px;height:6px;background:var(--fg);flex:none}
+  .sheet .kicker::after{content:"";height:1px;background:var(--line);flex:1}
+  .sheet .file-no{
+    font-size:10px;letter-spacing:1.4px;color:var(--muted);
+    font-variant-numeric:tabular-nums;margin-left:auto;
+  }
   .sheet h3{margin:5px 0 0;font-size:16px;font-weight:500;letter-spacing:.04em}
   .sheet .sub{margin:4px 0 16px;color:var(--muted);font-size:11px}
   .sheet .preview{color:var(--accent)}
@@ -544,9 +606,9 @@ function renderGrid(days){
                    + '<div class="m"><span class="full">' + (c.location || '') + '</span>'
                    + '<span class="short">' + (c.room || c.location || '') + '</span></div>'
                    + '<div class="t">' + (c.start || '') + '</div>';
-      el.onclick = (function(course, dayInfo){
-        return function(){ openSheet(course, dayInfo); };
-      })(c, d);
+      el.onclick = (function(course, dayInfo, node){
+        return function(){ openSheet(course, dayInfo, node); };
+      })(c, d, el);
       grid.appendChild(el);
     });
   });
@@ -561,14 +623,43 @@ function renderGrid(days){
 /* 开学前打开会是第 0 周、放假后会是第 30 周，钳到 1..maxWeek，别让页面空白 */
 function clampWeek(w){ return Math.min(DATA.maxWeek, Math.max(1, w)); }
 
-function showWeek(w){
-  var days = weekDays(w);
-  if (!days) return;
+var _flipTimer = null;
+function reduceMotion(){
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function paintWeek(w, days){
   curWeek = w;
   $('#weekLabel').innerHTML = '第 <b>' + w + '</b> 周<span>' + days[0].date.slice(5).replace('-','/')
     + ' – ' + days[6].date.slice(5).replace('-','/') + '</span>';
-  document.querySelectorAll('.week-ticks i').forEach(function(tick, i){ tick.className = i + 1 === w ? 'on' : ''; });
-  renderGrid(days);
+  document.querySelectorAll('.week-ticks i').forEach(function(tick, i){
+    tick.className = i + 1 === w ? 'on' : '';
+  });
+}
+
+/* animate 只在「用户主动切周」时为 true；调课刷新、问答跳转不翻页，否则太吵 */
+function showWeek(w, animate){
+  var days = weekDays(w);
+  if (!days) return;
+
+  if (!animate || reduceMotion()){
+    paintWeek(w, days);
+    renderGrid(days);
+    return;
+  }
+
+  var grid = $('#grid');
+  paintWeek(w, days);
+  if (_flipTimer) clearTimeout(_flipTimer);
+  grid.classList.remove('pushin');
+  grid.classList.add('pushout');
+  _flipTimer = setTimeout(function(){
+    renderGrid(days);
+    grid.classList.remove('pushout');
+    void grid.offsetWidth;
+    grid.classList.add('pushin');
+    _flipTimer = null;
+  }, 160);
 }
 
 function coursesOn(iso){
@@ -767,6 +858,7 @@ function buildICS(){
 
 /* ---------- 调课面板 ---------- */
 var edit = null;
+var _ghost = null;
 var sheetEl = $('#sheet'), scrimEl = $('#scrim');
 
 function dateOfWeekDay(w, day){
@@ -781,7 +873,7 @@ function ovTargetOf(name, date, period){
 }
 function refresh(){
   updateOvbar();
-  showWeek(clampWeek(curWeek || weekOfDate(NOW)));
+  showWeek(clampWeek(curWeek || weekOfDate(NOW)), false);
 }
 function updateOvbar(){
   var bar = $('#ovbar');
@@ -795,9 +887,11 @@ function updateOvbar(){
 function closeSheet(){
   sheetEl.classList.remove('show');
   scrimEl.classList.remove('show');
+  $('#grid').classList.remove('depth');
+  dropGhost();
 }
 
-function openSheet(c, day){
+function openSheet(c, day, node){
   var w = weekOfDate(parseISO(day.date));
   var exists = ovOf(c.name, day.date, c.startPeriod) || ovTargetOf(c.name, day.date, c.startPeriod);
   var span = Math.max(1, (c.endPeriod || c.startPeriod + 1) - c.startPeriod + 1);
@@ -814,8 +908,63 @@ function openSheet(c, day){
     edit.toPeriod = exists.toPeriod;
   }
   renderSheet();
-  sheetEl.classList.add('show');
-  scrimEl.classList.add('show');
+
+  if (node && !reduceMotion()){
+    drawOut(node, function(){
+      sheetEl.classList.add('show');
+      scrimEl.classList.add('show');
+    });
+  } else {
+    sheetEl.classList.add('show');
+    scrimEl.classList.add('show');
+  }
+}
+
+/* 把课程块从网格里「抽出来」：克隆一份飞向屏幕中央并放大，
+   网格同时后退变淡。像从档案架里抽出一份文件摊到眼前。 */
+function drawOut(node, done){
+  var r = node.getBoundingClientRect();
+  var g = node.cloneNode(true);
+  g.className = 'course drawn';
+  g.style.left = r.left + 'px';
+  g.style.top = r.top + 'px';
+  g.style.width = r.width + 'px';
+  g.style.height = r.height + 'px';
+
+  var targetW = Math.min(430, window.innerWidth - 56);
+  var targetH = Math.min(240, window.innerHeight * 0.44);
+  var scale = Math.min(targetW / r.width, targetH / r.height);
+  var cx = window.innerWidth / 2;
+  var cy = window.innerHeight * 0.44;
+
+  g.style.setProperty('--dx', (cx - (r.left + r.width / 2)).toFixed(1) + 'px');
+  g.style.setProperty('--dy', (cy - (r.top + r.height / 2)).toFixed(1) + 'px');
+  g.style.setProperty('--ds', scale.toFixed(3));
+
+  /* 上一张还没飞完就先清掉，避免快速连点叠出好几层 */
+  if (_ghost){ _ghost.remove(); _ghost = null; }
+  _ghost = g;
+
+  document.body.appendChild(g);
+  $('#grid').classList.add('depth');
+
+  /* 用定时器而不是 rAF 触发：被切到后台的 webview 会节流 rAF，
+     那样这张卡会永远停在原地、盖在页面上。 */
+  setTimeout(function(){ g.classList.add('out'); }, 20);
+
+  setTimeout(function(){
+    g.classList.add('fade');
+    done();
+  }, 430);
+
+  setTimeout(function(){
+    if (_ghost === g) _ghost = null;
+    g.remove();
+  }, 800);
+}
+
+function dropGhost(){
+  if (_ghost){ _ghost.remove(); _ghost = null; }
 }
 
 function renderSheet(){
@@ -825,7 +974,11 @@ function renderSheet(){
   var valid = tw >= 1 && tw <= DATA.maxWeek;
   var noop = isoOf(toDate) === edit.date && edit.toPeriod === edit.period;
 
-  var h = '<h3>' + edit.name + '</h3>';
+  var pad = function(n){ return (n < 10 ? '0' : '') + n; };
+  var h = '<div class="kicker">档案 / FILE'
+        + '<span class="file-no">W' + pad(edit.week) + '·D' + pad(edit.toDay || 1)
+        + '·P' + pad(edit.period) + '</span></div>';
+  h += '<h3>' + edit.name + '</h3>';
   h += '<div class="sub">第 ' + edit.week + ' 周 ' + DAY_NAMES[
         parseISO(edit.date).getDay() || 7] + ' 第 ' + edit.period + '-' +
         (edit.period + edit.span - 1) + ' 节 · ' + (edit.location || '') + '</div>';
@@ -974,9 +1127,9 @@ $('#ovclear').onclick = function(){
   grid.addEventListener('pointerleave', clearFocus);
 })();
 
-$('#prev').onclick = function(){ showWeek(Math.max(1, (curWeek || 1) - 1)); };
-$('#next').onclick = function(){ showWeek(Math.min(DATA.maxWeek, (curWeek || 1) + 1)); };
-$('#thisWeek').onclick = function(){ showWeek(clampWeek(weekOfDate(NOW))); };
+$('#prev').onclick = function(){ showWeek(Math.max(1, (curWeek || 1) - 1), true); };
+$('#next').onclick = function(){ showWeek(Math.min(DATA.maxWeek, (curWeek || 1) + 1), true); };
+$('#thisWeek').onclick = function(){ showWeek(clampWeek(weekOfDate(NOW)), true); };
 $('#ask').onclick = function(){ ask($('#q').value); };
 $('#q').addEventListener('keydown', function(e){ if (e.key === 'Enter') ask($('#q').value); });
 document.querySelectorAll('.chip').forEach(function(c){
@@ -994,7 +1147,7 @@ $('#cls').textContent = DATA.meta.className || '课表';
 var cw = weekOfDate(NOW);
 $('#sub').textContent = (DATA.meta.student || '') + ' · 今天' + DAY_NAMES[NOW.getDay() || 7]
   + ' · 第 ' + clampWeek(cw) + ' 周';
-showWeek(clampWeek(cw));
+showWeek(clampWeek(cw), true);
 updateOvbar();
 
 var preset = (location.search.match(/[?&]q=([^&]*)/) || [])[1];
