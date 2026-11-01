@@ -19,6 +19,7 @@
 学期总是从周一开始，所以按周吸附比直接信任原值更稳。
 """
 import os
+import re
 import json
 import datetime
 
@@ -168,11 +169,25 @@ def period_time(start_period, end_period, table=None):
 
 # ---------- 查询 ----------
 
+def short_room(location):
+    """从「东校区云海楼208」里抠出「208」。
+
+    手机上一个课程格子只有 40 多像素宽，全称只能显示成「东校区…」，等于没写。
+    房间号才是真正要找的信息，所以窄屏只显示它。
+    """
+    loc = (location or '').strip()
+    if not loc:
+        return ''
+    m = re.search(r'([A-Za-z]?-?\d{2,4})\s*$', loc)
+    return m.group(1) if m else loc
+
+
 def _entry(course, table=None):
     return {
         'name': course.get('name', ''),
         'teacher': course.get('teacher', ''),
         'location': course.get('location', ''),
+        'room': short_room(course.get('location', '')),
         'day': course.get('day'),
         'startPeriod': course.get('startPeriod'),
         'endPeriod': course.get('endPeriod'),

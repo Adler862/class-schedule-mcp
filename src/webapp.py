@@ -228,41 +228,78 @@ def ask(q, today=None):
     return {'intent': 'unknown', 'text': f'没太懂「{q}」。\n\n' + HELP_TEXT, 'data': None}
 
 
+_NOISE = re.compile(r'(在哪儿上|在哪上|在哪|什么时候上|什么时候|几节课|几节|上什么|有课吗|上课|在哪呢|呢|吗|的|课)')
+
+
 def _match_course(q):
-    """按课名匹配（取最长命中，避免「计算机组成原理」被「计算机」抢走）。"""
+    """按课名匹配，允许只说前缀。
+
+    用户问「算法设计在哪上」很少把「算法设计与分析」说全，所以先把疑问词剥掉
+    得到 core，再看 core 与课名是否互相包含。多个命中取名字最长的，
+    避免「计算机组成原理」被「计算机」抢走。
+    """
     data = semester.load()
+    core = _NOISE.sub('', re.sub(r'[?？。，,、\s]', '', q))
     best = None
     for c in data.get('courses', []):
         name = c.get('name') or ''
-        if len(name) >= 2 and name in q:
-            if best is None or len(name) > len(best.get('name', '')):
-                best = c
+        if len(name) < 2:
+            continue
+        hit = name in q or (len(core) >= 2 and (core in name or name in core))
+        if hit and (best is None or len(name) > len(best.get('name') or '')):
+            best = c
     if not best:
         return None
-    weeks = []
-    for w in range(best.get('startWeek', 1),
-                   best.get('startWeek', 1) + best.get('totalWeeks', 16)):
-        if semester.course_active(best, w):
-            weeks.append(w)
+
+    name = best.get('name')
+    slots = [_slot(c) for c in data.get('courses', []) if c.get('name') == name]
+    slots.sort(key=lambda s: (s['day'], s['startPeriod']))
+    out = dict(slots[0])
+    out['slots'] = slots          # 一门课一周可能有多个时段，前端可以整体展示
+    return out
+
+
+def _slot(c):
+    weeks = [w for w in range(1, 31) if semester.course_active(c, w)]
     return {
-        'name': best.get('name'),
-        'teacher': best.get('teacher'),
-        'location': best.get('location'),
-        'day': best.get('day'),
-        'weekday': semester.DAY_NAMES.get(best.get('day'), ''),
-        'startPeriod': best.get('startPeriod'),
-        'endPeriod': best.get('endPeriod'),
-        'start': semester.period_start(best.get('startPeriod')),
-        'end': semester.period_end(best.get('endPeriod')),
+        'name': c.get('name'),
+        'teacher': c.get('teacher'),
+        'location': c.get('location'),
+        'room': semester.short_room(c.get('location')),
+        'day': c.get('day'),
+        'weekday': semester.DAY_NAMES.get(c.get('day'), ''),
+        'startPeriod': c.get('startPeriod'),
+        'endPeriod': c.get('endPeriod'),
+        'start': semester.period_start(c.get('startPeriod')),
+        'end': semester.period_end(c.get('endPeriod')),
         'weeks': weeks,
-        'weekType': best.get('weekType', 'all'),
+        'weekType': c.get('weekType', 'all'),
     }
 
 
+def _week_ranges(weeks):
+    """[2,4,6,8] → 2-8 双周；[1,2,3,5] → 1-3、5 周。"""
+    if len(weeks) >= 4:
+        step = weeks[1] - weeks[0]
+        if step == 2 and all(weeks[i] - weeks[i - 1] == 2 for i in range(1, len(weeks))):
+            tail = '单周' if weeks[0] == 1 else ('双周' if weeks[0] == 2 else '隔周')
+            return f'{weeks[0]}-{weeks[-1]} {tail}'
+    out, i = [], 0
+    while i < len(weeks):
+        j = i
+        while j + 1 < len(weeks) and weeks[j + 1] == weeks[j] + 1:
+            j += 1
+        out.append(str(weeks[i]) if j == i else f'{weeks[i]}-{weeks[j]}')
+        i = j + 1
+    return '、'.join(out) + ' 周'
+
+
 def _course_text(c):
-    wt = {'odd': '单周', 'even': '双周'}.get(c['weekType'], '每周')
-    return (f'{c["name"]}：{c["weekday"]} 第 {c["startPeriod"]}-{c["endPeriod"]} 节'
-            f'（{c["start"]}–{c["end"]}），{wt}，{c["location"]}，{c["teacher"]}。')
+    head = c['name'] + (f'（{c["teacher"]}）' if c.get('teacher') else '')
+    lines = [f'{s["weekday"]} 第 {s["startPeriod"]}-{s["endPeriod"]} 节 · '
+             f'{s.get("room") or s.get("location") or ""} · {_week_ranges(s["weeks"])}'
+             for s in c.get('slots') or [c]]
+    return head + '\n' + '\n'.join(lines)
 
 
 # ---------- 日历导出 ----------

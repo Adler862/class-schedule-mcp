@@ -47,7 +47,9 @@ python src/server.py --host 0.0.0.0     # 手机连同一局域网访问
 所以另外提供一个自包含 HTML：
 
 ```bash
-python tools/build_single.py     # → dist/课表助手.html（约 48 KB）
+python tools/build_single.py                     # → dist/课表助手.html（示例数据）
+python tools/build_single.py --courses 我的课表.json --out dist/我的课表.html
+python tools/build_single.py --date 2026-11-02   # 把某天当作"今天"，截图/演示用
 ```
 
 这个文件把课表数据、渲染、问答、日历导出全塞进去了，**双击打开就能用**：
@@ -55,6 +57,12 @@ python tools/build_single.py     # → dist/课表助手.html（约 48 KB）
 
 构建时由 `semester.py` 把所有周的网格**预先算好**内联进去，
 所以周次、单双周这些容易算错的规则仍然只有一份实现，前端只做查表。
+
+`--date` 只写进 `DATA.today`，正常构建时该字段是 `null`，页面一律读系统时间——
+否则文件放两个月不动，它会"卡"在构建那天，比不用还糟。
+
+窄屏（≤430px）下课程块只有 40 多像素宽，地点全称只能显示成「东校区…」等于没写，
+所以构建时另存一个 `room`（`东校区仁智楼A207` → `A207`），窄屏只显示它。
 
 | 接口 | 作用 |
 |---|---|
@@ -144,7 +152,7 @@ python tests/test_mcp_handshake.py
 
 | 脚本 | 作用 |
 |---|---|
-| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / Web API / ICS 导出 / MCP 输出回归（51 个） |
+| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / Web API / ICS 导出 / 单文件构建 / MCP 输出回归（73 个） |
 | `tests/test_mcp_handshake.py` | 真实拉起服务进程，走 `initialize` / `tools/list` / `tools/call`，断言工具数量与名称 |
 | `tests/verify_news_pipeline.py` | 离线断言：桩掉 MCP 依赖后直接执行服务源码，用模拟数据校验板块配额与排序 |
 | `tests/live_test_news.py` | 联网抽查：只开部分源，看真实返回的分类与来源分布 |

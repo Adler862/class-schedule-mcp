@@ -93,6 +93,7 @@
   }
   .course .m{font-size:10.5px;color:var(--muted);line-height:1.35;
              white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .course .m .short{display:none}
   .course .t{font-size:10px;color:var(--muted);line-height:1.3;opacity:.8}
   .panel{
     background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
@@ -130,7 +131,7 @@
   @media (max-width:430px){
     body{padding:18px 10px calc(24px + env(safe-area-inset-bottom));font-size:13px}
     header{gap:8px;margin:0 2px 18px}
-    .title h1{font-size:17px}
+    .title h1{font-size:15px;line-height:1.35;text-wrap:balance}
     .title p{font-size:11px;margin-top:3px}
     .ghost{padding:6px 9px;font-size:11.5px;min-height:34px;gap:5px}
     .ghost svg{width:14px;height:14px}
@@ -146,8 +147,10 @@
     .gt{font-size:9px;padding:11px 1px 0}
     .cell{min-height:62px}
     .course{margin:2px 1px;padding:4px 1px 4px 3px;gap:1px;border-left-width:2px;border-radius:4px}
-    .course .n{font-size:9.5px;line-height:1.2;-webkit-line-clamp:4;letter-spacing:-.3px}
-    .course .m{font-size:8.5px;line-height:1.25;letter-spacing:-.3px}
+    .course .n{font-size:9.5px;line-height:1.2;-webkit-line-clamp:3;letter-spacing:-.3px}
+    .course .m{font-size:8.5px;line-height:1.25;letter-spacing:-.3px;opacity:.85}
+    .course .m .full{display:none}
+    .course .m .short{display:inline}
     .course .t{display:none}
     .panel{padding:14px;border-radius:12px}
     .panel h2{margin-bottom:10px}
@@ -279,7 +282,7 @@ function renderGrid(days){
       el.style.setProperty('--cb', col.bg);
       el.title = `${c.name}\n${c.start}–${c.end}\n${c.location}\n${c.teacher}`;
       el.innerHTML = `<div class="n">${c.name}</div>
-                      <div class="m">${c.location || ''}</div>
+                      <div class="m"><span class="full">${c.location || ''}</span><span class="short">${c.room || c.location || ''}</span></div>
                       <div class="t">${c.start || ''}</div>`;
       grid.appendChild(el);
     });
