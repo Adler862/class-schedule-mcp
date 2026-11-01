@@ -435,8 +435,8 @@ function updateScene(progress, dt) {
     if (isActive) {
       slot.holder.rotation.x = -0.32 * progress;
       slot.holder.rotation.y = selectedRotationY * progress;
-      slot.holder.scale.setScalar(1 + 0.7 * progress);
-      slot.body.scale.x = 1 + 1.6 * progress;
+      slot.holder.scale.setScalar(1 + 0.42 * progress);
+      slot.body.scale.x = 1 + 1.05 * progress;
       slot.body.scale.z = 1 - 0.88 * progress;
     } else if (slot.course) {
       slot.body.scale.x = 1;
@@ -448,6 +448,13 @@ function updateScene(progress, dt) {
       material.opacity = opacity;
       material.depthWrite = opacity > 0.96;
     }
+  }
+
+  /* 卡片展开时把相机往后撤一点：取景框是固定的（正交），不后撤就一定被裁。 */
+  const targetZoom = 1 - 0.3 * progress;
+  if (Math.abs(camera.zoom - targetZoom) > 0.0005){
+    camera.zoom += (targetZoom - camera.zoom) * Math.min(1, dt * 9);
+    camera.updateProjectionMatrix();
   }
 }
 

@@ -944,6 +944,7 @@ function buildICS(){
 /* ---------- 调课面板 ---------- */
 var edit = null;
 var _ghost = null;
+var _openSig = null;
 var sheetEl = $('#sheet'), scrimEl = $('#scrim');
 
 function dateOfWeekDay(w, day){
@@ -973,10 +974,19 @@ function closeSheet(){
   sheetEl.classList.remove('show');
   scrimEl.classList.remove('show');
   var fr = document.getElementById('gridFrame'); if (fr) fr.classList.remove('depth');
+  _openSig = null;
   dropGhost();
 }
 
 function openSheet(c, day, node){
+  /* 再点同一块就关掉——不用去够右上角的 × */
+  var sig = c.name + '|' + day.date + '|' + c.startPeriod;
+  if (sheetEl.classList.contains('show') && _openSig === sig){
+    closeSheet();
+    return;
+  }
+  _openSig = sig;
+
   var w = weekOfDate(parseISO(day.date));
   var exists = ovOf(c.name, day.date, c.startPeriod) || ovTargetOf(c.name, day.date, c.startPeriod);
   var span = Math.max(1, (c.endPeriod || c.startPeriod + 1) - c.startPeriod + 1);
@@ -1166,6 +1176,10 @@ sheetEl.onclick = function(e){
   }
 };
 scrimEl.onclick = closeSheet;
+sheetEl.addEventListener('click', function(e){
+  if (e.target.closest('button, input, [data-k]')) return;
+  closeSheet();
+});
 $('#ovclear').onclick = function(){
   if (!OV.length) return;
   if (!confirm('撤销全部 ' + OV.length + ' 处调课？')) return;
