@@ -10,7 +10,7 @@ const COLS = 1;                 // 真脊只有一排，横向铺满
 const W = 0.20, H = 1.66, T = 0.50;
 const GAP_X = 0.246, GAP_Z = 0.56;
 const DECOR_ROWS = 2;           // 前后各 2 排
-const LIFT = 0.82, PULL = 0.13;
+const LIFT = 0.62, PULL = 0.13;
 
 const canvas = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -21,7 +21,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-4, 4, 2.6, -2.6, 0.1, 100);
 camera.position.set(5.8, 7.2, 7.6);
-camera.lookAt(-0.52, 0.88, -0.24);
+camera.lookAt(-0.22, 0.84, -0.24);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
 const key = new THREE.DirectionalLight(0xfffdf8, 2.2);
@@ -76,9 +76,11 @@ const slots = [];
 const pickables = [];
 
 /* 装饰脊：没有交互、不可拾取，只是把画面填满。
-   高度按周次的伪随机数错开，让脊顶参差——整齐齐像柜子，参差才像被人翻过的档案架。 */
+   高度按周次的伪随机数错开，让脊顶参差——整齐齐像柜子，参差才像被人翻过的档案架。
+   颜色不能贴近背景 #e8e5e1，否则远处那排看着像半透明；实测它们 op=1 完全不透明，
+   纯粹是明度太接近才产生的错觉。 */
 const decorMat = new THREE.MeshStandardMaterial({
-  color: 0xd2ccc0, roughness: 0.94, metalness: 0
+  color: 0xb9b2a4, roughness: 0.94, metalness: 0
 });
 function pseudo(n) {
   const x = Math.sin(n * 12.9898) * 43758.5453;
@@ -109,7 +111,7 @@ for (let w = 1; w <= maxWeek; w++) {
   const list = weekCourses(w);
   const busy = list.length > 0;
   const hRatio = busy ? 1 : 0.62;
-  const baseOpacity = busy ? 1 : 0.5;
+  const baseOpacity = busy ? 1 : 0.82;
 
   const side = new THREE.MeshStandardMaterial({
     color: 0xded9d0, roughness: 0.88, metalness: 0, transparent: true, opacity: baseOpacity
@@ -145,13 +147,52 @@ for (let w = 1; w <= maxWeek; w++) {
   group.add(holder);
   const slot = {
     week: w, col, row, holder, body, baseY: (H * hRatio) / 2, baseX: cx, baseZ: cz,
-    mats: [side, face, top, capMat], busy, baseOpacity, lift: 0
+    mats: [side, face, top, capMat], busy, baseOpacity, lift: 0,
+    spring: { value: 0, velocity: 0 }
   };
   slots.push(slot);
   pickables.push(body);
   body.userData.slot = slot;
 }
 
+/* ---------- 动效 ----------
+   借自 RhineLabUI 的 motion.ts（MIT）。核心不是"更顺滑的缓动"，而是：
+   选中一根时，**相邻的也跟着动一下再平息**。只有选中那根在动，整排看上去就是静态图。 */
+const smooth = t => {
+  t = Math.max(0, Math.min(1, t));
+  return t * t * t * (10 + t * (-15 + 6 * t));
+};
+const bell = (x, width) => Math.exp(-0.5 * (x / width) ** 2);
+
+/* 带速度的二阶阻尼。注意它**不会过冲**（实测 rate 4~12 峰值都是 1.0000），
+   它比一阶强的地方是启动/收尾带惯性，不会像指数逼近那样一上来就"刹车"。
+   想要回弹得改成欠阻尼形式，但参考实现的波形本来也是显式包络，不靠过冲。 */
+function springDamp(s, target, rate, dt) {
+  const delta = s.value - target;
+  const impulse = s.velocity + rate * delta;
+  const decay = Math.exp(-rate * dt);
+  s.value = target + (delta + impulse * dt) * decay;
+  s.velocity = (s.velocity - rate * impulse * dt) * decay;
+}
+
+/* 邻脊被"带起来"的幅度：按距离延迟 + 衰减振荡，像手指扫过一排档案。
+   距离越远起得越晚、幅度越小，所以是依次起伏，不是齐动。
+   系数 0.28 是量出来的：d=1 峰值约为主抬升的 13%（屏幕上十几像素），
+   原来取 0.085 只有 4%、约 2px，等于没做。 */
+function neighborWave(distance, age) {
+  const t = age - Math.abs(distance) * 0.05;
+  if (t <= 0 || t > 2.4) return 0;
+  const env = smooth(t / 0.12) * Math.exp(-t * 1.9);
+  return (env * Math.cos(t * 7.4)) / (1 + Math.abs(distance) * 0.55);
+}
+
+/* 空闲呼吸：两个不同周期的正弦叠加，相邻脊错相，肉眼看不出但整架是活的 */
+function idleBreath(i, time) {
+  return 0.0055 * Math.sin(time * 0.85 + i * 0.42)
+       + 0.0026 * Math.sin(time * 0.61 - i * 0.29);
+}
+
+let selectedAt = 0;                 // 上次选中的时刻，用来算波纹年龄
 let selected = Math.max(0, Math.min(slots.length - 1, currentWeek() - 1));
 let hovered = -1;
 
@@ -182,7 +223,9 @@ canvas.addEventListener('click', (ev) => {
 });
 
 function select(i) {
-  selected = Math.max(0, Math.min(slots.length - 1, i));
+  const next = Math.max(0, Math.min(slots.length - 1, i));
+  if (next !== selected) selectedAt = performance.now() / 1000;
+  selected = next;
   paintOverlay();
 }
 
@@ -270,10 +313,29 @@ function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
+  const time = now / 1000;
+  const age = time - selectedAt;
+
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i];
-    const want = i === selected ? 1 : (i === hovered ? 0.16 : 0);
-    s.lift = reduce ? want : THREE.MathUtils.damp(s.lift, want, 12, dt);
+    const base = i === selected ? 1 : (i === hovered ? 0.16 : 0);
+
+    /* 选中一根时，邻脊按距离依次被带起再平息；静止时整体极轻微呼吸。
+       两条加起来幅度都很小（邻脊约主位移的 1/12），但整排因此不再像静态图。 */
+    let wobble = 0;
+    if (!reduce) {
+      const d = i - selected;
+      if (d !== 0) wobble = neighborWave(d, age) * 0.28;
+      wobble += idleBreath(i, time);
+    }
+
+    if (reduce) {
+      s.spring.value = base;
+      s.spring.velocity = 0;
+    } else {
+      springDamp(s.spring, base + wobble, 9, dt);
+    }
+    s.lift = s.spring.value;
 
     const px = s.baseX;
     /* 朝观者抽出（相机在 +z），不是往后推——往后推会被后排的装饰脊挡住，
@@ -282,11 +344,15 @@ function tick(now) {
     const py = s.baseY + LIFT * s.lift + (s.busy ? 0 : 0);
     s.holder.position.set(px, py, pz);
 
-    const op = s.baseOpacity * (i === selected ? 1 : (hovered === i ? 1 : (selected >= 0 ? 0.92 : 1)));
+    /* 不要为了"突出选中"把其余脊降到 0.92：那会让 depthWrite 变 false，
+       后面的脊直接透出来，看着像塑料壳。区分靠抬升就够了。 */
     for (let m = 0; m < s.mats.length; m++) {
       const mt = s.mats[m];
-      const target = (m === 3) ? (s.busy ? 1 : 0.35) : op;
+      const target = (m === 3) ? (s.busy ? 1 : 0.35) : s.baseOpacity;
       mt.opacity = target;
+      /* 关键：完全不透明时必须关掉 transparent。否则它仍走透明渲染队列，
+         按距离排序而不是深度测试，前面这几根就会"透"出后面的脊，像塑料壳。 */
+      mt.transparent = target < 0.999;
       mt.depthWrite = target > 0.96;
     }
   }
