@@ -15,10 +15,10 @@ import convert_xls  # noqa: E402
 
 class MaskTeacherTest(unittest.TestCase):
     def test_single_char_surname(self):
-        self.assertEqual(convert_xls.mask_teacher('刘波涛'), '刘老师')
+        self.assertEqual(convert_xls.mask_teacher('张伟'), '张老师')
 
     def test_two_char_name(self):
-        self.assertEqual(convert_xls.mask_teacher('赵磊'), '赵老师')
+        self.assertEqual(convert_xls.mask_teacher('王芳'), '王老师')
 
     def test_compound_surname_kept_whole(self):
         self.assertEqual(convert_xls.mask_teacher('欧阳修'), '欧阳老师')
@@ -29,15 +29,15 @@ class MaskTeacherTest(unittest.TestCase):
         self.assertEqual(convert_xls.mask_teacher('欧阳'), '欧老师')
 
     def test_multiple_teachers(self):
-        self.assertEqual(convert_xls.mask_teacher('刘波涛、唐良文'), '刘老师、唐老师')
-        self.assertEqual(convert_xls.mask_teacher('刘波涛,唐良文'), '刘老师、唐老师')
+        self.assertEqual(convert_xls.mask_teacher('张伟、李华'), '张老师、李老师')
+        self.assertEqual(convert_xls.mask_teacher('张伟,李华'), '张老师、李老师')
 
     def test_empty_and_none(self):
         self.assertEqual(convert_xls.mask_teacher(''), '')
         self.assertEqual(convert_xls.mask_teacher(None), '')
 
     def test_no_full_name_survives(self):
-        for full in ('刘波涛', '姚丽君', '徐成林'):
+        for full in ('张伟', '陈静', '孙丽'):
             self.assertNotIn(full, convert_xls.mask_teacher(full))
 
 
