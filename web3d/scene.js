@@ -901,7 +901,11 @@ function tick(now) {
   if (delta > PERIOD / 2) delta -= PERIOD;
   if (delta < -PERIOD / 2) delta += PERIOD;
   railScroll += reduce ? delta : delta * Math.min(1, dt * 7.5);
-  railScroll = ((railScroll % PERIOD) + PERIOD) % PERIOD;
+  /* 取模周期必须是 RAIL_N*PERIOD，不能是 PERIOD。
+     柱子位置函数的周期是 RAIL_N(51)，只有"周次"的周期是 PERIOD(17)。
+     按 17 归一化时，railScroll 每越过 17，center 会瞬间掉 17 列，
+     而 17 不是 51 的倍数 —— 整排柱子就会"啪"地跳一下，这就是到头那一下顿感。 */
+  railScroll %= RAIL_N * PERIOD;
 
   /* 先算位置，才知道谁在焦点上。
      取 RhineLabUI archive-loop.ts 的 nearestOccurrence：不去给每个柱子算余数，
@@ -931,8 +935,10 @@ function tick(now) {
     else springDamp(r.spring, target, 9, dt);
     r.lift = r.spring.value;
 
-    /* 抽出进度：只有焦点那一根抽，切周时旧的自己缩回去 */
-    const exTarget = (sheetOpen && isFocus) ? 1 : 0;
+    /* 抽出进度由"离焦点的远近"直接算，不再用「是不是焦点列」这个布尔量。
+       那个布尔量在缓动过程中会在相邻两列之间来回翻，ex 目标跟着 0/1 跳，
+       模型就一抽一缩地抖。改成位置的连续函数，滑过去就是平滑交接。 */
+    const exTarget = sheetOpen ? smooth(clamp01((w - 0.5) / 0.5)) : 0;
     r.ex += (exTarget - r.ex) * Math.min(1, dt * (reduce ? 40 : 5.2));
 
     const e = clamp01(r.ex);
