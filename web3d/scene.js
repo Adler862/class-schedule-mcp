@@ -1,5 +1,6 @@
 /* 课程档案 · 3D 课表 */
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const data = window.DATA || { meta: {}, courses: [], periodTimes: {} };
 const courses = Array.isArray(data.courses) ? data.courses : [];
@@ -74,7 +75,30 @@ shadow.position.y = -0.012;
 shadow.receiveShadow = true;
 scene.add(shadow);
 
+/* 档案脊用 Blender 导出的 GLB（带倒角与顶部标签凹槽）。
+   先用几何体建好场景，模型解析完再把几何体换掉——IIFE 里不能用顶层 await。 */
 const bodyGeometry = new THREE.BoxGeometry(0.46, 2.05, 1.08);
+if (window.SPINE && window.SPINE.length) {
+  try {
+    const bin = atob(window.SPINE);
+    const buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    new GLTFLoader().parse(buf.buffer, '', (gltf) => {
+      const src = gltf.scene.getObjectByProperty('isMesh', true);
+      if (!src) return;
+      const g = src.geometry.clone();
+      g.scale(1.32, 1.32, 1.32);   // 0.34×1.9×1.1 → 0.46×2.05×1.08，和原几何体对齐
+      g.computeVertexNormals();
+      scene.traverse((o) => {
+        if (o.isMesh && o.geometry === bodyGeometry) o.geometry = g;
+      });
+      bodyGeometry.dispose();
+    });
+  } catch (e) {
+    console.warn('GLB 解析失败，保留几何体', e);
+  }
+}
+
 const markerGeometry = new THREE.BoxGeometry(0.34, 0.045, 0.22);
 const courseBySlot = new Map();
 for (let i = 0; i < courses.length; i++) {

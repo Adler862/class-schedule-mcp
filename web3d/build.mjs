@@ -40,8 +40,15 @@ try {
     JSON.parse(await readFile(join(here, '..', 'config', 'timetable.json'), 'utf8')));
 } catch { /* 用前端兜底 */ }
 
+// Blender 出的档案脊模型，base64 内联，保持单文件离线可用
+let spineB64 = '';
+try {
+  spineB64 = (await readFile(join(here, 'models', 'spine.glb'))).toString('base64');
+} catch { console.warn('未找到 models/spine.glb，退回几何体'); }
+
 const shell = await readFile(join(here, 'shell.html'), 'utf8');
 const html = shell
+  .replace('/*__B64__*/null', () => JSON.stringify(spineB64))
   .replace('/*__DATA__*/null', () => JSON.stringify(payload))
   .replace('/*__BUNDLE__*/', () => code);
 
