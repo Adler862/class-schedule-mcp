@@ -3,82 +3,131 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>课程档案库 · 3D 课表</title>
+<title>课程档案架</title>
 <style>
-  :root{color-scheme:light;--paper:#e8e5e1;--card:#f2efe9;--ink:#151713;--muted:#6f6c64;--copper:#a67d48}
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);
-    font-family:-apple-system,"MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif}
-  #stage{display:block;width:100%;height:100%;touch-action:none;outline:none}
-  #ui{position:fixed;inset:0;pointer-events:none;user-select:none}
-  .corner{position:absolute;width:24px;height:24px;border-color:rgba(111,108,100,.48);border-style:solid}
-  .corner.tl{left:18px;top:18px;border-width:1px 0 0 1px}.corner.tr{right:18px;top:18px;border-width:1px 1px 0 0}
-  .corner.bl{left:18px;bottom:18px;border-width:0 0 1px 1px}.corner.br{right:18px;bottom:18px;border-width:0 1px 1px 0}
-  .masthead{position:absolute;left:42px;top:35px}
-  .eyebrow,.micro{font-size:10px;line-height:1.5;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
-  .masthead h1{margin:5px 0 3px;font-size:23px;line-height:1.1;font-weight:650;letter-spacing:2px}
-  .masthead .sub{font-size:11px;letter-spacing:2.6px;color:var(--muted)}
-  .meta{position:absolute;right:42px;top:39px;text-align:right;width:max-content;max-width:330px}
-  #student{font-size:12px;font-weight:550;line-height:1.6;letter-spacing:1.2px;margin-bottom:3px;white-space:nowrap}
-  #semester{font-size:10px;line-height:1.7;letter-spacing:1.6px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
-  .hover-info{position:absolute;left:42px;top:137px;padding-left:13px;border-left:2px solid var(--copper);max-width:280px}
-  #hover-main{font-size:12px;line-height:1.6;letter-spacing:.5px}
-  #hover-sub{font-size:10px;line-height:1.7;letter-spacing:1.1px;color:var(--muted);margin-top:2px}
-  .axis{position:absolute;inset:0;overflow:hidden;z-index:1}
-  .day-label{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:10px;letter-spacing:1.6px;color:var(--muted)}
-  .day-label::after{content:"";display:block;width:1px;height:9px;background:rgba(166,125,72,.6);margin:7px auto 0}
-  .period-label{position:absolute;transform:translate(-100%,-50%);white-space:nowrap;text-align:right;color:var(--muted);padding-right:10px}
-  .period-label span{display:block;font-size:10px;line-height:1.35;letter-spacing:1.2px}
-  .period-label small{display:block;font-size:9px;line-height:1.4;letter-spacing:.6px;opacity:.82}
-  .footer{position:absolute;left:42px;bottom:36px;display:flex;align-items:center;gap:18px}
-  .footer .index{font-size:14px;font-weight:500;letter-spacing:.6px;color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}
-  .footer .rule{height:1px;width:52px;background:rgba(111,108,100,.45)}
-  .footer .hint{font-size:9px;letter-spacing:1.4px;color:var(--muted)}
-  .close-wrap{position:absolute;right:42px;bottom:35px;display:flex;align-items:center;gap:14px;
-    opacity:0;visibility:hidden;transform:translateY(8px);transition:opacity .2s ease,transform .2s ease,visibility .2s}
-  body.is-open .close-wrap{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto}
-  .close-wrap .esc{font-size:9px;letter-spacing:1.5px;color:var(--muted)}
-  #close-file{appearance:none;border:1px solid var(--copper);background:var(--card);color:var(--ink);
-    padding:10px 18px;font:500 11px/1 -apple-system,"MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
-    letter-spacing:1.6px;cursor:pointer}
-  #close-file:hover{background:#fff;outline:none}#close-file:focus-visible{outline:2px solid var(--copper);outline-offset:3px}
-  @media(max-width:600px){
-    .corner{width:16px;height:16px}.corner.tl{left:10px;top:10px}.corner.tr{right:10px;top:10px}
-    .corner.bl{left:10px;bottom:10px}.corner.br{right:10px;bottom:10px}
-    .masthead{left:24px;top:24px}.masthead h1{font-size:18px}.masthead .sub{font-size:9px}
-    .meta{right:24px;top:27px}#student{font-size:10px;letter-spacing:.5px}#semester{font-size:9px;line-height:1.5;letter-spacing:.8px}
-    .hover-info{left:24px;top:105px;max-width:230px}#hover-main{font-size:11px}
-    .day-label{font-size:8px;letter-spacing:.5px}.day-label::after{height:5px;margin-top:4px}
-    .period-label{padding-right:5px}.period-label span{font-size:8px}.period-label small{font-size:7px}
-    .footer{left:24px;bottom:26px;gap:10px}.footer .index{font-size:11px}.footer .rule{width:24px}.footer .hint{font-size:8px;letter-spacing:.7px}
-    .close-wrap{right:24px;bottom:25px}.close-wrap .esc{display:none}#close-file{padding:9px 13px;font-size:10px}
+  html,body{
+    margin:0;height:100%;overflow:hidden;
+    background:#e8e5e1;color:#151713;
+    font-family:-apple-system,"MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
   }
-  @media(prefers-reduced-motion:reduce){.close-wrap{transition:none}}
+  #stage{display:block;width:100%;height:100%}
+
+  .ui{position:fixed;inset:0;pointer-events:none;z-index:2}
+  .ui a,.ui button{pointer-events:auto}
+  .tag{font-size:10px;letter-spacing:1.8px;color:#6f6c64}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* 左上标题 */
+  .brand{position:absolute;left:26px;top:22px}
+  .brand h1{margin:0;font-size:22px;font-weight:600;letter-spacing:.02em}
+  .brand p{margin:5px 0 0;font-size:10px;letter-spacing:2.2px;color:#6f6c64;line-height:1.7}
+  .brand p b{font-weight:600;color:#151713;letter-spacing:2.2px}
+
+  /* 右上索引 */
+  .idx{position:absolute;right:26px;top:24px;display:flex;gap:18px;align-items:center}
+  .idx span{font-size:10px;letter-spacing:1.6px;color:#6f6c64}
+  .idx i{font-style:normal;color:#151713}
+
+  /* 左下计数 */
+  .sel{position:absolute;left:26px;bottom:22px}
+  .sel .tag{margin-bottom:4px}
+  .sel .n{display:flex;align-items:baseline;gap:8px;line-height:1}
+  .sel .n b{font-size:52px;font-weight:300;letter-spacing:-.02em}
+  .sel .n s{text-decoration:none;font-size:13px;color:#8f8a80}
+
+  /* 底部中间 */
+  .foot{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);text-align:center}
+  .foot .col{font-size:10px;letter-spacing:1.8px;color:#6f6c64;margin-bottom:5px}
+  .foot .nm{font-size:12px;color:#151713;letter-spacing:.06em}
+
+  /* 右下键位 */
+  .keys{position:absolute;right:26px;bottom:24px;display:flex;gap:10px;align-items:center;
+        font-size:10px;letter-spacing:1.4px;color:#8f8a80}
+  .keys kbd{
+    font:inherit;border:1px solid #bdb8ad;padding:2px 5px;color:#151713;background:transparent;
+  }
+
+  /* 引线标注：定位到选中脊顶，向右拉一条细线 */
+  #callout{
+    position:absolute;left:0;top:0;opacity:0;
+    will-change:transform;pointer-events:none;
+  }
+  #callout .dot{position:absolute;left:-3px;top:-3px;width:6px;height:6px;background:#151713}
+  #callout .line{position:absolute;left:0;top:0;width:300px;height:1px;background:#151713;opacity:.55}
+  #callout .box{position:absolute;left:14px;top:-40px;width:290px}
+  #callout .box .k{font-size:10px;letter-spacing:1.8px;color:#6f6c64}
+  #callout .box .w{
+    font-size:26px;font-weight:600;letter-spacing:.01em;margin:3px 0 2px;
+    font-variant-numeric:tabular-nums;
+  }
+  #callout .box .meta{font-size:11px;color:#6f6c64;letter-spacing:1px}
+  #callout .act{
+    position:absolute;left:14px;top:16px;display:flex;align-items:center;gap:10px;
+  }
+  #callout .act .line2{width:196px;height:1px;background:#151713;opacity:.35}
+  #callout .act a{
+    text-decoration:none;color:#151713;font-size:10px;letter-spacing:1.8px;white-space:nowrap;
+    pointer-events:auto;border-bottom:1px solid #151713;padding-bottom:1px;
+  }
+  #callout .act a:hover{color:#a67d48;border-color:#a67d48}
+  #callout .cnt{position:absolute;left:14px;top:34px;font-size:9px;letter-spacing:1.6px;color:#8f8a80}
+
+  @media (max-width:560px){
+    .brand h1{font-size:17px}
+    .brand p{display:none}
+    .sel .n b{font-size:38px}
+    #callout .box{width:190px}
+    #callout .line{width:180px}
+    #callout .act .line2{width:96px}
+    .keys{display:none}
+  }
 </style>
 </head>
 <body>
-<canvas id="stage" aria-label="可交互的三维课表档案阵面"></canvas>
-<div id="ui">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-  <header class="masthead">
-    <div class="eyebrow">COURSE ARCHIVE / INTERNAL DATABASE</div>
+<canvas id="stage" aria-label="可交互的三维课程档案架"></canvas>
+
+<div class="ui">
+  <div class="brand">
     <h1>课程档案库</h1>
-    <div class="sub">COURSE ARCHIVE · 课表索引</div>
-  </header>
-  <div class="meta"><div id="student"></div><div id="semester"></div></div>
-  <div class="hover-info" aria-live="polite">
-    <div id="hover-main">选择一根档案脊</div>
-    <div id="hover-sub">点击展开课程档案</div>
+    <p>COURSE ARCHIVE<br>TIMETABLE / WEEKLY INDEX<br><b>ANALYSIS OS</b></p>
   </div>
-  <div class="axis" aria-hidden="true">
-    <div class="day-label">周一</div><div class="day-label">周二</div><div class="day-label">周三</div>
-    <div class="day-label">周四</div><div class="day-label">周五</div><div class="day-label">周六</div><div class="day-label">周日</div>
-    <div class="period-label"></div><div class="period-label"></div><div class="period-label"></div>
-    <div class="period-label"></div><div class="period-label"></div><div class="period-label"></div>
+
+  <div class="idx">
+    <span>ARCHIVE INDEX <i id="idx">(17)</i></span>
+    <span>SAVED <i>00</i></span>
   </div>
-  <div class="footer"><span class="index">7 天 × 6 大节 · 共 0 门课</span><span class="rule"></span><span class="hint">ARCHIVE / SELECT · 点击档案脊以读取</span></div>
-  <div class="close-wrap"><span class="esc">ESC TO RETURN</span><button id="close-file" type="button" tabindex="-1" aria-hidden="true">关闭档案</button></div>
+
+  <div class="sel">
+    <div class="tag">ARCHIVE / SELECT</div>
+    <div class="n"><b id="bigNum">09</b><s id="totalNum">/ 17</s></div>
+  </div>
+
+  <div class="foot">
+    <div class="col">COLUMN <b id="colNum">02</b> <span id="colTotal">/ 06</span></div>
+    <div class="nm" id="slotName">第 9 周</div>
+  </div>
+
+  <div class="keys">
+    <kbd>←</kbd><kbd>→</kbd><span>选档案</span><kbd>↑</kbd><kbd>↓</kbd><span>换列</span>
+  </div>
+
+  <div id="callout">
+    <span class="dot"></span>
+    <span class="line"></span>
+    <div class="box">
+      <div class="k">INTERNAL DATABASE</div>
+      <div class="w" id="callWeek">WEEK 09</div>
+      <div class="meta" id="callRange">10/26 – 11/01</div>
+    </div>
+    <div class="act">
+      <span class="line2"></span>
+      <a id="callLink" href="index.html">打开课表 →</a>
+    </div>
+    <div class="cnt" id="callCount">SECTIONS</div>
+  </div>
 </div>
+
 <script>window.DATA = /*__DATA__*/null;</script>
 <script>/*__BUNDLE__*/</script>
 </body>
