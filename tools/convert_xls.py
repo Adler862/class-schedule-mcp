@@ -240,12 +240,13 @@ def mask_teacher(name):
     return '、'.join(out)
 
 
-def convert(filepath, start=None, mask_teachers=False):
+def convert(filepath, start=None, mask_teachers=False, school=None, class_name=None):
     """主转换函数
 
     start:     学期首周周一 YYYY-MM-DD。导出文件里只有「打印日期」，它可能是学期中
                任意一天，拿来当学期起点会让整学期错位，所以能从外面指定就指定。
     mask_teachers: 教师姓名换成「姓 + 老师」，其余字段一概不动。
+    school / class_name: 替换标题里的学校和学期行里的班级名。
     """
     rows = read_excel(filepath)
 
@@ -351,6 +352,13 @@ def convert(filepath, start=None, mask_teachers=False):
         for c in all_courses:
             c['teacher'] = mask_teacher(c.get('teacher'))
 
+    if school:
+        # 标题形如「<校名> <姓名> 学生个人课表」，只换第一段校名，后面保留
+        student_info = re.sub(r'^\s*\S+?(?=\s)', school, student_info, count=1)
+
+    if class_name:
+        semester_info = re.sub(r'班级：\s*\S+', f'班级：{class_name}', semester_info)
+
     return {
         'meta': {
             'student': student_info,
@@ -361,6 +369,7 @@ def convert(filepath, start=None, mask_teachers=False):
             'totalCourses': len({c['name'] for c in all_courses}),
             'totalSlots': len(all_courses),
             'teacherMasked': bool(mask_teachers),
+            'sanitized': bool(school or class_name),
         },
         'courses': all_courses
     }
@@ -374,6 +383,9 @@ def main():
     p.add_argument('--start', help='学期首周周一 YYYY-MM-DD（强烈建议指定）')
     p.add_argument('--mask-teacher', action='store_true', dest='mask_teacher',
                    help='教师姓名换成「姓 + 老师」，其余内容原样保留')
+    p.add_argument('--school', help='替换标题里的学校名，如 --school 示例大学')
+    p.add_argument('--class-name', dest='class_name',
+                   help='替换学期行里的班级名，如 --class-name 示例班级')
     args = p.parse_args()
 
     if not os.path.exists(args.filepath):
@@ -382,7 +394,8 @@ def main():
 
     print(f'正在解析: {args.filepath}')
     try:
-        result = convert(args.filepath, start=args.start, mask_teachers=args.mask_teacher)
+        result = convert(args.filepath, start=args.start, mask_teachers=args.mask_teacher,
+                     school=args.school, class_name=args.class_name)
     except Exception as e:
         print(f'解析失败: {e}')
         import traceback

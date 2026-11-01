@@ -3,10 +3,11 @@
     "student": "示例大学 xxx 学生个人课表",
     "semester": "学年学期：2026-2027-1        班级：示例班级        专业：计算机科学与技术(非师范)        院系：计算机科学与技术学院        打印日期：2026-11-01",
     "semesterStart": "2026-08-31",
-    "convertTime": "2026-11-01 13:55:19",
+    "convertTime": "2026-11-01 13:59:53",
     "totalCourses": 10,
     "totalSlots": 20,
-    "teacherMasked": true
+    "teacherMasked": true,
+    "sanitized": true
   },
   "courses": [
     {
