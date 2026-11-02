@@ -471,6 +471,14 @@ function nearestOccurrence(value, center, period) {
    ← → 换周，↑ ↓ 在这一周的七天里翻——和 RhineLabUI 的 lane × row 是同一个意思。 */
 let selectedDay = 1;
 
+/* 鼠标停在哪一根上。重构循环阵列时把这个丢了，
+   结果光标还在变，脊却一动不动——看着像"悬停效果没了"。 */
+let hoverRail = null;
+/* 点击脉冲：点下去的那一根立刻弹一下再平息。
+   只靠"滚过去再抬起"的话，点到远处的档案会有半秒的"点了没反应"。 */
+let pressRail = null;
+let pressAt = -99;
+
 let selectedAt = 0;                 // 上次选中的时刻，用来算波纹年龄
 let selected = Math.max(0, Math.min(PERIOD - 1, currentWeek() - 1));
 /* 面板状态要在这里声明：select() 会读它，而 select 定义在上面。 */
@@ -500,12 +508,19 @@ function pick(ev) {
 
 canvas.addEventListener('pointermove', (ev) => {
   if (ev.pointerType === 'touch') return;
-  canvas.style.cursor = pick(ev) ? 'pointer' : 'default';
+  const r = pick(ev);
+  hoverRail = r;
+  canvas.style.cursor = r ? 'pointer' : 'default';
 });
-canvas.addEventListener('pointerleave', () => { canvas.style.cursor = 'default'; });
+canvas.addEventListener('pointerleave', () => {
+  hoverRail = null;
+  canvas.style.cursor = 'default';
+});
 canvas.addEventListener('click', (ev) => {
   const r = pick(ev);
   if (!r) return;
+  pressRail = r;
+  pressAt = performance.now() / 1000;
   const i = r.week - 1;
   /* 左键点脊就直接打开课表。点的是当前已经打开的那一根 → 收起。 */
   if (sheetOpen && i === selected) { closeWeekSheet(); return; }
@@ -1024,6 +1039,12 @@ function tick(now) {
     const w = Math.max(0, 1 - Math.abs(r.x - focusX) / GAP_X);
 
     let target = w;
+    /* 悬停抬起：比选中弱，但足够看得出"这一根是活的" */
+    if (r === hoverRail && !isFocus) target = Math.max(target, 0.2);
+    if (r === pressRail) {
+      const pt = time - pressAt;
+      if (pt >= 0 && pt < 1.2) target = Math.max(target, 0.6 * Math.exp(-pt * 5));
+    }
     if (!reduce && !isFocus) {
       target += neighborWave(r.col - focusRail.col, age) * 0.22;
     }
