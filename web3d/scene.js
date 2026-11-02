@@ -138,21 +138,21 @@ function makeNoTexture(n) {
      原来是 7.5px 竖排 NO.xx、只占顶部 1/8，等于看不见。 */
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  let y = 32;
-  /* 脊面只有 0.17 宽，架子上也就 20 来个像素，字号必须顶到边才认得出。
-     数字用 38px（几乎等于画布宽度），WEEK 压到 11px 当注脚。 */
+  /* 脊面只有 0.17 宽，架子上也就几十像素，字号必须顶到边。
+     而且整幅铺满——之前只画在上方 40%，UV 一偏就整条全白。 */
   g.fillStyle = '#a8a294';
-  g.font = '600 11px "Helvetica Neue", Arial, sans-serif';
+  g.font = '600 20px "Helvetica Neue", Arial, sans-serif';
+  let y = 46;
   for (const c of 'WEEK') {
     g.fillText(c, cw / 2, y);
-    y += 13;
+    y += 46;
   }
-  y += 10;
+  y += 16;
   g.fillStyle = '#151713';
-  g.font = '300 38px "Helvetica Neue", Arial, sans-serif';
+  g.font = '300 40px "Helvetica Neue", Arial, sans-serif';
   for (const c of String(n).padStart(2, '0')) {
     g.fillText(c, cw / 2, y);
-    y += 40;
+    y += 72;
   }
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -320,7 +320,8 @@ function makeLabelTexture(w) {
   const cw = 1024, ch = 896;
   const HEAD = 96;
   const colW = cw / 8;
-  const rowH = (ch - HEAD) / 6;
+  const BAND = 62;                  // 底部周次带的高度
+  const rowH = (ch - HEAD - BAND) / 6;
   const cv = document.createElement('canvas');
   cv.width = cw; cv.height = ch;
   const g = cv.getContext('2d');
@@ -357,7 +358,21 @@ function makeLabelTexture(w) {
       g.stroke();
     });
 
+  /* 底部周次带：整张纸上唯一"一眼可读"的周次，
+     详情态和架子上都看得到。 */
+  g.fillStyle = '#151713';
+  g.fillRect(0, ch - BAND, cw, BAND);
+  g.fillStyle = '#f7f5f0';
   g.textBaseline = 'middle';
+  g.font = '600 26px "Helvetica Neue", Arial, sans-serif';
+  g.fillText('WEEK ' + pad2(w), 18, ch - BAND / 2);
+  g.font = '400 18px "Helvetica Neue", Arial, sans-serif';
+  g.fillStyle = '#b8b2a4';
+  g.textAlign = 'right';
+  const bw0 = isoOf(w, 1), bw1 = isoOf(w, 7);
+  g.fillText(pad2(bw0.getMonth() + 1) + '/' + pad2(bw0.getDate())
+    + ' – ' + pad2(bw1.getMonth() + 1) + '/' + pad2(bw1.getDate()),
+    cw - 18, ch - BAND / 2);
   g.textAlign = 'left';
 
   /* 表头左上：档案号 */
@@ -577,7 +592,7 @@ for (let c = 0; c < RAIL_N; c++) {
        后排还是程序化盒子——后排永远只露个边，没必要上精模。 */
     let body;
     if (r === 0 && PARTS && PARTS.archive_body) {
-      body = new THREE.Mesh(PARTS.archive_body, [m.side, m.face]);
+      body = new THREE.Mesh(PARTS.archive_body, [m.side, m.side]);
       if (PARTS.archive_face) {
         const sheet = new THREE.Mesh(PARTS.archive_face, m.print);
         body.add(sheet);
