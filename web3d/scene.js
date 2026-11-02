@@ -1306,8 +1306,14 @@ function tick(now) {
 
   /* 镜头绕过去看：位置走球面弧线，注视点在圆心上再往右挪一点，
      这样档案落在画面左半边，右边留给课表。 */
+  /* 竖屏把镜头拉远一点：fov 定的是竖直视野，手机横向太窄，
+     板宽 1.486 会直接出画。只动距离，不碰 fov 和雾。
+     雾的 near 跟着 camDist 走，所以拉远后仍然只是轻微雾化。 */
+  const portrait = innerHeight > innerWidth * 1.05;
+  const toR = CAM_TO.radius * (portrait ? 1.55 : 1);
+
   const sph = new THREE.Spherical(
-    CAM_FROM.radius + (CAM_TO.radius - CAM_FROM.radius) * ck,
+    CAM_FROM.radius + (toR - CAM_FROM.radius) * ck,
     CAM_FROM.phi + (CAM_TO.phi - CAM_FROM.phi) * ck,
     CAM_FROM.theta + (CAM_TO.theta - CAM_FROM.theta) * ck
   );
