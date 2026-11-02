@@ -9,7 +9,9 @@ const DATA = window.DATA || { courses: [], maxWeek: 17, start: '2026-08-31' };
 /* 一块档案 = 一张课表：长边与高按 8 列 × 7 行的比例（8:7），
    不再用 8 : 1.3 的细长条。细长条无论怎么转，抽出来都只是一根横杠。 */
 const W = 0.17, H = 1.30, T = H * 8 / 7;
-const GAP_X = 0.245;
+/* 板从 8 米缩到 1.5 米之后，0.245 的间距就贴成一堵墙了。
+   放到 0.33，板与板之间留出一条缝，才看得出是一格一格。 */
+const GAP_X = 0.33;
 const LIFT = 1.15;
 
 /* 抽出后的状态：往前拉、转正、缩小、停在左侧 */
@@ -453,35 +455,6 @@ function makeLabelTexture(w) {
   return tex;
 }
 
-/* 架子上一眼认周次用的小标签：印在板顶面靠脊那一端 */
-function weekTagTexture(w) {
-  const cw = 256, ch = 56;
-  const cv = document.createElement('canvas');
-  cv.width = cw; cv.height = ch;
-  const g = cv.getContext('2d');
-  g.fillStyle = '#f8f6f1';
-  g.fillRect(0, 0, cw, ch);
-  g.fillStyle = '#151713';
-  g.textAlign = 'left';
-  g.textBaseline = 'middle';
-  g.font = '600 27px "Helvetica Neue", Arial, sans-serif';
-  g.fillText('WEEK', 12, ch / 2);
-  g.font = '300 40px "Helvetica Neue", Arial, sans-serif';
-  g.fillText(pad2(w), 108, ch / 2 + 2);
-  g.strokeStyle = '#c9c3b6';
-  g.lineWidth = 2;
-  g.strokeRect(1, 1, cw - 2, ch - 2);
-  const t = new THREE.CanvasTexture(cv);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
-const weekTagTex = new Map();
-function weekTag(w) {
-  if (!weekTagTex.has(w)) weekTagTex.set(w, weekTagTexture(w));
-  return weekTagTex.get(w);
-}
-
 const labelTex = new Map();
 function labelTexture(w) {
   if (!labelTex.has(w)) {
@@ -545,7 +518,7 @@ function matSet(w) {
     map: makeNoTexture(w),
   });
   const top = new THREE.MeshStandardMaterial({
-    color: 0xfbf9f4, roughness: 0.9, metalness: 0,
+    color: 0xded8cb, roughness: 0.94, metalness: 0,
     transparent: tflag, depthWrite: dflag, opacity: op
   });
   /* 脊顶色标：课程越多越深，饱和度压到 20% 左右 */
