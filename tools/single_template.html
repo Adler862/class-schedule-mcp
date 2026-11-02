@@ -360,7 +360,7 @@
     color:var(--muted);text-align:center;font-size:11px;line-height:1.9;letter-spacing:1.2px;
   }
   .scrim{
-    position:fixed;inset:0;z-index:40;background:rgba(21,23,19,.48);
+    position:fixed;inset:0;z-index:35;background:rgba(21,23,19,.48);
     opacity:0;pointer-events:none;transition:opacity .18s;
   }
   .scrim.show{opacity:1;pointer-events:auto}
@@ -1129,9 +1129,9 @@ function drawOut(node, done){
 
   if (_ghost){ _ghost.remove(); _ghost = null; }
   _ghost = g;
-  /* 31：在遮罩(40)和面板(41)下面。卡片常驻之后必须沉到这两层底下，
-     否则它会盖住面板上的"关闭"和"调整这次课"。 */
-  g.style.zIndex = '31';
+  /* 38：压在遮罩(35)之上、面板(41)之下。
+     低于遮罩会被那层 .48 的黑压暗；高于面板又会盖住"关闭"按钮。 */
+  g.style.zIndex = '38';
   document.body.appendChild(g);
   var frame = document.getElementById('gridFrame');
   if (frame) frame.classList.add('depth');
