@@ -30,8 +30,13 @@
   /* 滚动编号：每一格数字是一条 0–9 的竖带，换周时整条平移过去。
      RhineLabUI 用 Rolling Number 做同一件事——数字不是"换掉"，而是"滚过去"。 */
   /* 每格留 1.15em：数字的字形上下都超过 1em，卡死 1em 会把"0""7"的顶切掉 */
+  /* 竖向对齐要手动补：inline-flex 的基线取的是内部第一个格子的基线，
+     而格子高 1.15em、又多出来的部分全在下方，数字就会比旁边的
+     "第""周"低一截。0.075em 正好是 (1.15-1)/2，提回来就和文字齐平。 */
   .rn{display:inline-flex;overflow:hidden;line-height:1;height:1.15em;
-      font-weight:inherit;letter-spacing:inherit}
+      vertical-align:0.075em;
+      /* 标题是 -1.2px 的字距，数字继承过来会挤在一起、左边还会被裁 */
+      font-weight:inherit;letter-spacing:0}
   .rn > i{display:block;height:1.15em;
       transition:transform 480ms cubic-bezier(.22,1,.36,1)}
   .rn > i > b{display:block;height:1.15em;line-height:1.15em;
