@@ -128,12 +128,17 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
 
 /* 脊面编号：Canvas 现画竖排小字 NO.09，不用任何外部字体。
    参考图里每根脊的窄面都印着编号，字很小很淡——那是"档案"这个概念的锚点。 */
+/* 纹理超采样倍数：canvas 按 1.3 倍绘制，坐标仍按逻辑尺寸写。
+   手机竖屏拉远后，1024 的纹理一个纹素摊不到一个屏幕像素，字就糊。 */
+const TEX_SUP = 1.3;
+
 function makeNoTexture(n) {
   const cw = 48, ch = 400;
   const cv = document.createElement('canvas');
-  cv.width = cw;
-  cv.height = ch;
+  cv.width = Math.round(cw * TEX_SUP);
+  cv.height = Math.round(ch * TEX_SUP);
   const g = cv.getContext('2d');
+  g.scale(TEX_SUP, TEX_SUP);
   g.fillStyle = '#f7f5f0';
   g.fillRect(0, 0, cw, ch);
   /* 脊面是架子上唯一露出来的窄面，周次印在这里。
@@ -319,14 +324,20 @@ function makeLabelTexture(w) {
   /* 这块面上印的就是**这一周的课表本身**：8 列（节次 + 七天）、7 行（表头 + 六节），
      和模型 8:7 的长宽比一一对应，所以格子是方的，不会被拉扁。
      远看是一块印满字的面，抽到眼前才读得清。 */
+  /* 画布整体放大 1.3 倍：下面所有绘制坐标仍按 1024×896 写，
+     靠一次 scale 统一放大。手机竖屏把模型拉远之后，1024 的纹理
+     一个纹素摊不到一个屏幕像素，字就糊了。
+     内存代价：3.7MB → 6.2MB/张。 */
   const cw = 1024, ch = 896;
   const HEAD = 96;
   const colW = cw / 8;
   const BAND = 62;                  // 底部周次带的高度
   const rowH = (ch - HEAD - BAND) / 6;
   const cv = document.createElement('canvas');
-  cv.width = cw; cv.height = ch;
+  cv.width = Math.round(cw * TEX_SUP);
+  cv.height = Math.round(ch * TEX_SUP);
   const g = cv.getContext('2d');
+  g.scale(TEX_SUP, TEX_SUP);     // 下面仍按 1024×896 的逻辑坐标画
   const SANS = '"Helvetica Neue", Arial, sans-serif';
 
   g.fillStyle = '#f8f6f1';
@@ -451,7 +462,7 @@ function makeLabelTexture(w) {
 
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   return tex;
 }
 
@@ -1329,7 +1340,9 @@ function tick(now) {
   const fogK = Math.pow(ck, 0.4);
   const camDist = camera.position.distanceTo(CAM_PIVOT);
   scene.fog.near = camDist + (1 - fogK) * 900 - fogK * 1.0;
-  scene.fog.far = camDist + (1 - fogK) * 1800 + fogK * 8;
+  /* 放宽到 8 会让后排顶面全露出来，架子变成货架特写；
+       竖屏拉远后本来就需要多一点余量，折中 6.5。 */
+  scene.fog.far = camDist + (1 - fogK) * 1800 + fogK * 6.5;
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
