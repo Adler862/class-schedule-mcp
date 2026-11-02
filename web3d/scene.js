@@ -49,7 +49,7 @@ camera.lookAt(0.35, 0.95, -1.2);
    圆心放在抽出的档案身上，半径/仰角/方位角各走一条。 */
 const CAM_PIVOT = new THREE.Vector3(-1.55, 1.35, 0);
 const CAM_FROM = new THREE.Spherical(31.06, 1.440, -0.474);   // 初始机位反算
-const CAM_TO = new THREE.Spherical(13.0, 1.475, -1.395);      // 靠近 + 视角往右让出侧面
+const CAM_TO = new THREE.Spherical(11.8, 1.5708, -1.5708);    // 正对镜头：phi/theta 都摆到轴线上
 const camLookAt = new THREE.Vector3();
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
@@ -1140,7 +1140,8 @@ function tick(now) {
   ckNow = ck;
 
   group.updateMatrixWorld();
-  CAM_PIVOT.set(FOCUS_OPEN - EX.out * ck, 1.35, 0);
+  /* y 用板中心而不是 1.35：正对时视点高一点低一点，板就整体上移/下移 */
+  CAM_PIVOT.set(FOCUS_OPEN - EX.out * ck, 1.35 + (EX.y - 1.35) * ck, 0);
   group.localToWorld(CAM_PIVOT);
 
   const fxTarget = sheetOpen ? FOCUS_OPEN : FOCUS_CLOSED;
@@ -1267,7 +1268,7 @@ function tick(now) {
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
-    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), -0.26 * ck);
+    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 0 * ck);
   camera.lookAt(camLookAt);
 
   /* 底部滚动周次条：跟着轨道位置一起平移，
