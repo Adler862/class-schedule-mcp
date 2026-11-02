@@ -49,7 +49,7 @@ camera.lookAt(0.35, 0.95, -1.2);
    圆心放在抽出的档案身上，半径/仰角/方位角各走一条。 */
 const CAM_PIVOT = new THREE.Vector3(-1.55, 1.35, 0);
 const CAM_FROM = new THREE.Spherical(31.06, 1.440, -0.474);   // 初始机位反算
-const CAM_TO = new THREE.Spherical(14.6, 1.475, -1.395);      // 靠近 + 视角往右让出侧面
+const CAM_TO = new THREE.Spherical(13.0, 1.475, -1.395);      // 靠近 + 视角往右让出侧面
 const camLookAt = new THREE.Vector3();
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
@@ -549,27 +549,9 @@ for (let c = 0; c < RAIL_N; c++) {
          抽出来转正之后才整个露出来。 */
       const labelMat = labelMaterial(w);
       const front = new THREE.Mesh(labelGeo, labelMat);
-      front.position.set(W / 2 + 0.002, 0, 0);
-      front.rotation.y = Math.PI / 2;
-      front.visible = false;
+      front.visible = false;   // 课表改贴 GLB 的纸面，这层留着只作回退
       body.add(front);
-      const back = new THREE.Mesh(labelGeo, labelMat);
-      back.position.set(-W / 2 - 0.002, 0, 0);
-      back.rotation.y = -Math.PI / 2;
-      back.visible = false;
-      body.add(back);
-      /* 当前聚焦的那一天：一条极淡的竖带，跟着 ↑↓ 在板面上走 */
-      const markMat = new THREE.MeshBasicMaterial({
-        color: 0x151713, transparent: true, opacity: 0.07, depthWrite: false,
-      });
-      const mark = new THREE.Mesh(new THREE.PlaneGeometry(T / 8, H), markMat);
-      mark.position.set(-T / 2 + (0.5 / 8) * T, 0, 0.02);
-      mark.visible = false;
-      front.add(mark);
-      rail.mark = mark;
-      rail.markMat = markMat;
       rail.label = front;
-      rail.labelBack = back;
       rail.labelMat = labelMat;
       rail.body = body;
       pickables.push(body);
@@ -725,7 +707,7 @@ function syncDayMark() {
   if (!focusRail || !focusRail.mark) return;
   /* 纹理是 8 列（节次 + 七天），第 d 天占 u ∈ [d/8, (d+1)/8]，
      plane 的 u=0 对应局部 x = -T/2 */
-  focusRail.mark.position.x = -T / 2 + ((selectedDay - 0.5) / 8) * T;
+  focusRail.mark.position.z = -T / 2 + ((selectedDay - 0.5) / 8) * T;
 }
 
 /* 右侧面板跟着走：标题换成"周三 · 10/28"，清单里那一列标出来 */
@@ -1080,7 +1062,10 @@ document.addEventListener('keydown', ev => {
 const v = new THREE.Vector3();
 function placeCallout() {
   const box = E('callout');
-  if (!focusRail || !box || sheetOpen) return;
+  if (!box) return;
+  /* 面板打开时必须把内联 opacity 清掉——它优先级高于 CSS 的
+     body.sheet-open #callout{opacity:0}，不清就会留着上一次的 1。 */
+  if (!focusRail || sheetOpen) { box.style.opacity = '0'; return; }
 
   v.set(0, H / 2, 0).applyMatrix4(focusRail.body.matrixWorld);
   v.project(camera);
@@ -1251,8 +1236,6 @@ function tick(now) {
     front.rotation.y = 0;
     front.scale.setScalar(sc);
     /* 标签跟着拔出进度淡入，塞回去时一起消失 */
-    r.label.visible = e2 > 0.02;
-    if (r.labelBack) r.labelBack.visible = r.label.visible;
     if (r.mark) r.mark.visible = e2 > 0.4;
     r.labelMat.opacity = e2;
     for (let row = 1; row < ROWS; row++) {
@@ -1284,7 +1267,7 @@ function tick(now) {
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
-    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), -0.12 * ck);
+    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), -0.26 * ck);
   camera.lookAt(camLookAt);
 
   /* 底部滚动周次条：跟着轨道位置一起平移，
