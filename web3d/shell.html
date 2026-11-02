@@ -96,10 +96,9 @@
     position:absolute;left:0;top:0;opacity:0;
     will-change:transform;pointer-events:none;
   }
-  #callout .dot{
-    position:absolute;width:6px;height:6px;background:#151713;
-    left:var(--dx2,0px);top:var(--dy2,0px);margin:-3px 0 0 -3px;
-  }
+  /* 引线已经撤掉，这个 6×6 的黑点就只剩副作用：
+     它会停在模型脊顶的投影位置上，看着像画面上一个黑色像素块。 */
+  #callout .dot{display:none}
   #callout .line{
     position:absolute;left:0;top:0;width:1px;height:1px;
     background:#151713;opacity:.5;transform-origin:0 0;

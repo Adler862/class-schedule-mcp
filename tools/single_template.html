@@ -474,6 +474,28 @@
     button,.scrim,.sheet{transition:none}
     .answer.show{animation:none}
   }
+
+  /* ---------- 3D 入口：浮在左侧空白处 ---------- */
+  .to3d{
+    position:fixed;left:clamp(18px,2.4vw,44px);top:44%;transform:translateY(-50%);
+    z-index:30;display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+    padding:16px 20px 14px;border:1.5px solid var(--fg);background:var(--bg);
+    text-decoration:none;color:var(--fg);cursor:pointer;
+    transition:background .2s var(--ease),color .2s var(--ease);
+  }
+  .to3d b{font-size:34px;font-weight:600;letter-spacing:-1.5px;line-height:1}
+  .to3d span{font-size:10px;letter-spacing:.16em;line-height:1.5;color:var(--muted);
+    transition:color .2s var(--ease)}
+  .to3d i{font-style:normal;font-size:13px;margin-top:7px;
+    transition:transform .2s var(--ease)}
+  .to3d:hover{background:var(--fg);color:var(--bg)}
+  .to3d:hover span{color:var(--bg);opacity:.65}
+  .to3d:hover i{transform:translateX(4px)}
+  @media (max-width:1180px){ .to3d{left:10px;padding:12px 15px 11px}
+    .to3d b{font-size:28px} }
+  @media (max-width:860px){ .to3d{position:static;transform:none;flex-direction:row;
+    align-items:center;gap:8px;margin:0 0 14px;padding:10px 14px}
+    .to3d b{font-size:20px} .to3d i{margin:0} }
 </style>
 </head>
 <body>

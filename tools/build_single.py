@@ -122,8 +122,8 @@ def render(payload):
         tpl = f.read()
     blob = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
     html = tpl.replace('/*__DATA__*/null', blob)
-    link = ('<br><a href="3d.html" style="color:var(--accent)">'
-            '看看 3D 档案版 →</a>') if _cli.link_3d else ''
+    link = ('<a class="to3d" href="3d.html"><b>3D</b>'
+            '<span>档案架<br>视图</span><i>→</i></a>') if _cli.link_3d else ''
     return html.replace('<!--LINK3D-->', link)
 
 
