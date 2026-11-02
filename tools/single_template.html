@@ -1010,6 +1010,10 @@ function updateOvbar(){
   }
 }
 function closeSheet(){
+  /* 刚弹出来就被关掉：真实鼠标点击时 click 之后往往还跟着一次
+     落在遮罩上的事件（或者双击的第二下），面板一出现正好盖住指针。
+     给 260ms 的免疫期，任何关闭请求在这段时间内都忽略。 */
+  if (Date.now() - _openedAt < 260) return;
   sheetEl.classList.remove('show');
   scrimEl.classList.remove('show');
   var fr = document.getElementById('gridFrame'); if (fr) fr.classList.remove('depth');
@@ -1018,6 +1022,8 @@ function closeSheet(){
 }
 
 var sheetMode = 'detail';
+
+var _openedAt = 0;
 
 function openSheet(c, day, node){
   /* 再点同一块就关掉——不用去够右上角的 × */
@@ -1045,6 +1051,9 @@ function openSheet(c, day, node){
     edit.toPeriod = exists.toPeriod;
   }
   renderSheet();
+  _openedAt = Date.now();
+  sheetEl.classList.add('show');
+  scrimEl.classList.add('show');
 
   if (node && !reduceMotion()){
     drawOut(node, function(){
