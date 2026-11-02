@@ -86,8 +86,10 @@
     font-variant-numeric:tabular-nums;
   }
   .week-ticks button:hover::after{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* 去掉常驻的 transform-style:preserve-3d。
+     perspective/translateZ 这些动画都是作用在 .grid-frame 自己身上，
+     不需要给子元素开 3D 上下文；留着它只会让整块一直处在 3D 合成层里。 */
   .grid-frame{position:relative;margin:0 0 28px;padding:12px;
-    transform-style:preserve-3d;
     transition:transform 380ms var(--ease),opacity 300ms var(--ease);
   }
   .grid-frame.depth{transform:perspective(1000px) translateZ(-70px) scale(.975);opacity:.5}
@@ -147,10 +149,12 @@
   /* ---------- 动效系统 ---------- */
   :root{ --ease:cubic-bezier(.22,1,.36,1); --dur:220ms; }
 
+  /* 同上：preserve-3d 和常驻的 will-change 一起，会让整个网格长住在一个
+     提升过的合成层里。鼠标扫过时格子在变，GPU 就把整层重新栅格化，
+     很容易只重绘了一半——你看到的那块斜三角就是这么来的。
+     动画本身用的是作用在自己身上的 perspective/translateZ，不需要它们。 */
   .grid{
-    transform-style:preserve-3d;
     transition:transform 380ms var(--ease), opacity 300ms var(--ease);
-    will-change:transform;
   }
   /* 只过渡 opacity / border-color / background。
      之前这里还带着 filter，鼠标进网格时几十个格子同时拿到 filter:saturate()，
