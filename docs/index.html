@@ -1040,7 +1040,7 @@ function closeSheet(){
   /* 刚弹出来就被关掉：真实鼠标点击时 click 之后往往还跟着一次
      落在遮罩上的事件（或者双击的第二下），面板一出现正好盖住指针。
      给 260ms 的免疫期，任何关闭请求在这段时间内都忽略。 */
-  if (Date.now() - _openedAt < 260) return;
+  if (Date.now() - _openedAt < 520) return;
   sheetEl.classList.remove('show');
   scrimEl.classList.remove('show');
   var fr = document.getElementById('gridFrame'); if (fr) fr.classList.remove('depth');
@@ -1300,7 +1300,17 @@ sheetEl.onclick = function(e){
                     teacher: edit.teacher, location: edit.location, room: edit.room });
   }
 };
-scrimEl.onclick = closeSheet;
+/* 手机上点课程会延迟约 300ms 才派发 click，那时遮罩已经盖上来，
+   于是这次点击落到遮罩上、面板刚开就关——看着就是"闪一下"。
+   记下按下时遮罩是否已经存在，只有确实按在遮罩上才关。 */
+var _scrimArmed = false;
+scrimEl.addEventListener('pointerdown', function(){ _scrimArmed = scrimEl.classList.contains('show'); });
+scrimEl.addEventListener('touchstart', function(){ _scrimArmed = scrimEl.classList.contains('show'); }, {passive:true});
+scrimEl.onclick = function(e){
+  if (!_scrimArmed) { _scrimArmed = false; return; }
+  _scrimArmed = false;
+  closeSheet();
+};
 sheetEl.addEventListener('click', function(e){
   if (e.target.closest('button, input, [data-k]')) return;
   closeSheet();
