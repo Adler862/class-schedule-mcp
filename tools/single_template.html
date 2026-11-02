@@ -234,7 +234,7 @@
 
   /* 抽出档案：真卡片飞出来的替身 */
   .drawn{
-    transition:transform 620ms cubic-bezier(.2,.85,.25,1), opacity 420ms linear !important;
+    transition:transform 860ms cubic-bezier(.2,.85,.25,1), opacity 560ms linear !important;
     position:fixed;z-index:60;margin:0;pointer-events:none;
     display:flex;flex-direction:column;justify-content:center;gap:6px;
     padding:22px 24px;box-sizing:border-box;
@@ -273,7 +273,7 @@
     .sheet{transition:none}
     .course.lift{transform:none}
     .drawn{
-    transition:transform 620ms cubic-bezier(.2,.85,.25,1), opacity 420ms linear !important;transition:none}
+    transition:transform 860ms cubic-bezier(.2,.85,.25,1), opacity 560ms linear !important;transition:none}
     .grid.depth{transform:none;opacity:1}
   }
 
@@ -1129,6 +1129,9 @@ function drawOut(node, done){
 
   if (_ghost){ _ghost.remove(); _ghost = null; }
   _ghost = g;
+  /* 31：在遮罩(40)和面板(41)下面。卡片常驻之后必须沉到这两层底下，
+     否则它会盖住面板上的"关闭"和"调整这次课"。 */
+  g.style.zIndex = '31';
   document.body.appendChild(g);
   var frame = document.getElementById('gridFrame');
   if (frame) frame.classList.add('depth');
@@ -1140,19 +1143,9 @@ function drawOut(node, done){
   /* 430ms 就走完了，肉眼只看到"闪一下"。
      拉到 700ms 让它停住看清，面板同时升起；再用 420ms 慢慢淡出，
      两层的交接是叠着的，不是"卡片消失、面板出现"。 */
-  /* 面板早一点升起（480ms），卡片晚一点收（760ms）——
-     两者叠着交接，视觉上是"卡片还在，面板从下面接上来"。 */
-  setTimeout(done, 480);
-
-  setTimeout(function(){
-    g.style.zIndex = '30';            // 降到面板下面，别叠着两层字
-    g.classList.add('fade');
-  }, 760);
-
-  setTimeout(function(){
-    if (_ghost === g) _ghost = null;
-    if (g.parentNode) g.remove();
-  }, 1120);
+  /* 面板升起后这张卡片**不消失**，一直留在那儿，直到点 X / 遮罩 / ESC
+     关面板时再一起收掉（closeSheet 里的 dropGhost）。 */
+  setTimeout(done, 680);
 }
 
 function dropGhost(){
