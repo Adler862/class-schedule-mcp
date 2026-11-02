@@ -20,7 +20,7 @@ def box(name, sx, sy, sz, loc, bevel=0.006, seg=2, rgb=(0.90, 0.88, 0.85)):
     o = bpy.context.object
     o.name = name
     o.data.name = name
-    o.scale = (sx / 2, sy / 2, sz / 2)
+    o.scale = (sx, sy, sz)      # size=1 的 cube 已是 1 单位边长
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
