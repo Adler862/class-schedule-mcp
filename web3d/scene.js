@@ -15,7 +15,7 @@ const LIFT = 1.15;
 /* 抽出后的状态：往前拉、转正、缩小、停在左侧 */
 const EX = {
   rise: 1.9,        // 从上方拔出：先抬到邻居脊顶之上
-  y: 1.20,          // 落定后的中心高度
+  y: 1.55,          // 落定后的中心高度
   scale: 1,         // 不缩放——尺寸靠镜头距离调，缩模型比例就假了
   /* 朝镜头方向带出来一段。不脱离那一排的话，主体和邻居在同一深度上，
      雾没法只吃掉背景，近处那几根会直接盖在主体前面。 */
@@ -49,7 +49,7 @@ camera.lookAt(0.35, 0.95, -1.2);
    圆心放在抽出的档案身上，半径/仰角/方位角各走一条。 */
 const CAM_PIVOT = new THREE.Vector3(-1.55, 1.35, 0);
 const CAM_FROM = new THREE.Spherical(31.06, 1.440, -0.474);   // 初始机位反算
-const CAM_TO = new THREE.Spherical(17.5, 1.470, -1.492);      // 侧面、接近平视
+const CAM_TO = new THREE.Spherical(14.6, 1.475, -1.395);      // 靠近 + 视角往右让出侧面
 const camLookAt = new THREE.Vector3();
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
@@ -503,6 +503,7 @@ for (let c = 0; c < RAIL_N; c++) {
     holders: [], body: null, cap: null,
     hRatio: m.hRatio,
     mats: [m.side, m.face, m.top, m.cap],
+    printMat: m.print,
     baseOpacity: m.busy ? 1 : 0.82,
     capOpacity: m.busy ? 1 : 0.35,
     _op: -1,
@@ -640,7 +641,7 @@ let focusRail = null;
 /* 轨道位置（列单位，带小数）——缓动到 selected，所以柱子是连续滑过去的 */
 let railScroll = 0;
 /* 焦点横坐标：关着时居中，打开时左移，整条轨道跟着让位。 */
-const FOCUS_CLOSED = 0.30, FOCUS_OPEN = -1.55;
+const FOCUS_CLOSED = 0.30, FOCUS_OPEN = 0.78;   // 详情态把模型摆到画面中间偏右
 let focusX = FOCUS_CLOSED;
 let camK = 0;                       // 镜头绕行进度 0→1
 
@@ -741,6 +742,8 @@ function syncDay() {
 /* ---------- 滚动编号 ----------
    周次不是"换一个数字"，而是滚过去。每格是一条 0–9 的竖带（两份首尾相接，
    越过边界时先无动画平移一份，再接上），换周时整条平移。 */
+const ROLL_STEP = 1.15;      // 和 CSS 里 .rn 的格高一致
+
 function mountRoll(id, digits) {
   const el = E(id);
   if (!el) return;
@@ -780,13 +783,13 @@ function rollTo(id, value) {
       const shift = next > 18 ? -10 : 10;
       const base = cur + shift;
       r.style.transition = 'none';
-      r.style.transform = 'translateY(-' + base + 'em)';
+      r.style.transform = 'translateY(' + (-base * ROLL_STEP) + 'em)';
       void r.offsetWidth;
       r.style.transition = '';
       next = base + step;
     }
     st.pos[i] = next;
-    r.style.transform = 'translateY(-' + next + 'em)';
+    r.style.transform = 'translateY(' + (-next * ROLL_STEP) + 'em)';
   });
 }
 
@@ -1218,19 +1221,22 @@ function tick(now) {
       + EX.rise * e1 * (1 - e2) + (EX.y - r.baseY) * e2;
     const sc = 1 + (EX.scale - 1) * e2;
 
-    /* 详情态把其余档案压到几乎看不见：镜头绕到侧面时，那一排会在画面里
-       叠成一堵墙，把抽出来的这一份埋掉。雾做不到这件事——它们和主体
-       的距离只差一两个单位，雾只能整片糊，分不出谁是谁。 */
-    const dim = isFocus ? 1 : 1 - 0.93 * ck;
+    /* 详情态把其余档案压到几乎看不见。雾做不到：同一排的邻居和主体
+       距离只差一两个单位，雾会把它们和主体一起糊掉。 */
+    const dim = isFocus ? 1 : 1 - 0.94 * ck;
     for (let mi = 0; mi < 4; mi++) {
       const mt = r.mats[mi];
-      const base = mi === 3 ? r.capOpacity : r.baseOpacity;
-      const op2 = base * dim;
+      const baseOp = mi === 3 ? r.capOpacity : r.baseOpacity;
+      const op2 = baseOp * dim;
       if (Math.abs((mt.opacity || 0) - op2) > 0.004) {
         mt.opacity = op2;
         mt.transparent = op2 < 0.999;
         mt.depthWrite = op2 > 0.96;
       }
+    }
+    if (r.printMat && Math.abs(r.printMat.opacity - dim) > 0.004) {
+      r.printMat.transparent = dim < 0.999;
+      r.printMat.opacity = dim;
     }
 
     /* 只有第 0 排会抬、会拔；**不转身**——转的是镜头，不是档案。
@@ -1274,11 +1280,11 @@ function tick(now) {
   const fogK = Math.pow(ck, 0.4);
   const camDist = camera.position.distanceTo(CAM_PIVOT);
   scene.fog.near = camDist + (1 - fogK) * 900 - fogK * 1.0;
-  scene.fog.far = camDist + (1 - fogK) * 1800 + fogK * 9;
+  scene.fog.far = camDist + (1 - fogK) * 1800 + fogK * 5.5;
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
-    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 0.92 * ck);
+    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), -0.12 * ck);
   camera.lookAt(camLookAt);
 
   /* 底部滚动周次条：跟着轨道位置一起平移，

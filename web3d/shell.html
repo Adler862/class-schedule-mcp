@@ -29,11 +29,13 @@
 
   /* 滚动编号：每一格数字是一条 0–9 的竖带，换周时整条平移过去。
      RhineLabUI 用 Rolling Number 做同一件事——数字不是"换掉"，而是"滚过去"。 */
-  .rn{display:inline-flex;overflow:hidden;line-height:1;height:1em;
+  /* 每格留 1.15em：数字的字形上下都超过 1em，卡死 1em 会把"0""7"的顶切掉 */
+  .rn{display:inline-flex;overflow:hidden;line-height:1;height:1.15em;
       font-weight:inherit;letter-spacing:inherit}
-  .rn > i{display:block;height:1em;
+  .rn > i{display:block;height:1.15em;
       transition:transform 480ms cubic-bezier(.22,1,.36,1)}
-  .rn > i > b{display:block;height:1em;font-weight:inherit;font-variant-numeric:tabular-nums}
+  .rn > i > b{display:block;height:1.15em;line-height:1.15em;
+      font-weight:inherit;font-variant-numeric:tabular-nums}
   .num{font-variant-numeric:tabular-nums}
 
   /* 左上标题 */
@@ -128,12 +130,13 @@
   .shade{
     position:fixed;inset:0;z-index:19;pointer-events:none;
     opacity:0;transition:opacity 360ms linear;
+    /* 面板没了之后这片纸就不该再往中间铺——它原本是用来托住右侧文字的，
+       现在铺到 61% 正好把模型的右半边洗白。只在最右边留一点收边。 */
     background:linear-gradient(90deg,
-      rgba(232,229,225,0) 33%,
-      rgba(232,229,225,.14) 45%,
-      rgba(232,229,225,.62) 51%,
-      rgba(232,229,225,.95) 56%,
-      #e8e5e1 61%);
+      rgba(232,229,225,0) 76%,
+      rgba(232,229,225,.35) 90%,
+      rgba(232,229,225,.85) 97%,
+      #e8e5e1 100%);
   }
   body.sheet-open .shade{opacity:1}
 
@@ -149,35 +152,31 @@
   }
   body.sheet-open .pane{opacity:1;transform:none}
   body:not(.sheet-open) .pin{pointer-events:none}
+  /* 详情态不再有右侧那面板：课表已经印在模型上了，再摆一遍是重复。
+     现在只留两个角标（周次 / 操作），画面让给模型。 */
   .pin{
-    flex:1;min-height:0;display:flex;flex-direction:column;
-    padding:74px clamp(28px,3.2vw,54px) calc(20px + env(safe-area-inset-bottom))
-            clamp(26px,3vw,44px);
-    pointer-events:auto;
+    position:fixed;inset:0;display:block;padding:0;
+    pointer-events:none;
   }
+  .pin > *{pointer-events:auto}
   /* 内容期间位移由 JS 逐块 animate，这里只给个兜底初始态 */
   .pin > *{will-change:transform,opacity}
 
-  .kicker{
-    display:flex;justify-content:space-between;align-items:baseline;
-    font-size:10.5px;letter-spacing:1.5px;font-variant-numeric:tabular-nums;
-  }
+  .kicker{display:none}
   .kicker span:last-child{font-size:9px;letter-spacing:1.2px;color:#8b8578}
 
   .pane h2{
-    margin:24px 0 10px;font-weight:600;
-    font-size:clamp(28px,3vw,40px);line-height:1.1;letter-spacing:-1.2px;
-    font-variant-numeric:tabular-nums;
+    position:absolute;left:26px;top:112px;margin:0;
+    font-weight:600;font-size:clamp(28px,2.6vw,38px);line-height:1.1;
+    letter-spacing:-1.2px;font-variant-numeric:tabular-nums;
   }
-  .cnline{display:flex;align-items:center;gap:16px;font-size:12.5px;letter-spacing:.02em}
+  .cnline{position:absolute;left:26px;top:158px;
+    display:flex;align-items:center;gap:16px;font-size:12.5px;letter-spacing:.02em}
   .cnline span:last-child{font-size:10px;color:#8b8578;letter-spacing:1.2px}
 
-  .rule{height:2px;background:#20221d;margin-top:20px;transform-origin:left center}
+  .rule{display:none}
 
-  .meta{
-    display:grid;grid-template-columns:1fr 1fr;gap:18px 28px;
-    margin:22px 0 20px;padding:0;
-  }
+  .meta{display:none}
   .meta div{min-width:0}
   .meta dt{font-size:9px;letter-spacing:.8px;color:#807b70;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
@@ -188,8 +187,7 @@
   .meta dd em{font-style:normal;color:#8b8578;font-size:11px}
 
   /* 页签 */
-  .tabs{position:relative;display:flex;gap:clamp(18px,2.4vw,32px);
-    border-bottom:1px solid #bdb8ad;flex:none}
+  .tabs{display:none}
   .tabs button{
     font:inherit;background:none;border:0;cursor:pointer;padding:0 0 12px;
     font-size:10px;letter-spacing:1.2px;color:#989184;position:relative;
@@ -202,8 +200,7 @@
     transform-origin:left center;transition:transform 220ms cubic-bezier(.22,1,.36,1);
   }
 
-  .tbody{flex:1;min-height:0;overflow:auto;padding:14px 0 4px;overscroll-behavior:contain;
-    scrollbar-width:thin;scrollbar-color:#c3bcae transparent}
+  .tbody{display:none}
   .tbody::-webkit-scrollbar{width:6px;height:6px}
   .tbody::-webkit-scrollbar-thumb{background:#c9c3b6}
   .tabp{display:none}
@@ -279,7 +276,9 @@
     margin-top:5px}
 
   /* 底部操作 */
-  .acts{display:flex;align-items:center;gap:clamp(14px,2vw,30px);margin-top:16px;flex:none}
+  .acts{position:absolute;right:clamp(24px,3vw,44px);bottom:52px;
+    width:min(340px,42vw);display:flex;align-items:center;
+    gap:clamp(12px,1.6vw,22px)}
   .solid{
     flex:1;height:46px;background:#252820;color:#f0eee5;text-decoration:none;
     display:flex;align-items:center;justify-content:space-between;
@@ -296,7 +295,8 @@
   .export span{font-size:19px;line-height:1}
   .export:hover{color:#946b3c}
   .fnote{
-    display:flex;justify-content:space-between;margin-top:14px;flex:none;
+    position:absolute;right:clamp(24px,3vw,44px);bottom:30px;
+    display:flex;gap:18px;
     font-size:8.5px;letter-spacing:.7px;color:#9a9487;
     font-variant-numeric:tabular-nums;
   }
@@ -306,7 +306,7 @@
     opacity:0;transition:opacity 300ms linear}
   body.sheet-open .layer{opacity:1}
   .back{
-    position:absolute;left:clamp(24px,3vw,44px);top:136px;
+    position:absolute;left:26px;top:192px;
     display:flex;align-items:center;gap:14px;pointer-events:auto;
     font:inherit;background:none;border:0;cursor:pointer;color:#151713;
     opacity:0;transform:translateX(-8px);
