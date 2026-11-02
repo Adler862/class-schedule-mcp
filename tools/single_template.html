@@ -407,6 +407,8 @@
     font:inherit;font-size:11px;padding:0 14px;height:38px;cursor:pointer;
   }
   .sheet .ghostbtn:hover{color:var(--fg);border-color:var(--fg)}
+  /* 主按钮吃掉剩余宽度，三个按钮就不会挤成一排等宽 */
+  .sheet .acts .primary{flex:1}
   .sheet .acts button{
     flex:1;height:42px;border:1px solid var(--line-strong);background:transparent;
     color:var(--fg);font-size:12px;cursor:pointer;
@@ -736,6 +738,21 @@ function buildWeekTicks(){
     var y0 = parseInt(String(DATA.start).slice(0, 4), 10);
     term.textContent = y0 + '–' + (y0 + 1) + ' · 共 ' + DATA.maxWeek + ' 周';
   }
+}
+
+/* 调试钩子：?probe=1 自动打开第一节的课页，方便截图核对 */
+if (location.search.indexOf('probe=') >= 0){
+  setTimeout(function(){
+    var c = document.querySelector('.course');
+    if (!c) return;
+    c.click();
+    if (location.search.indexOf('probe=2') >= 0){
+      setTimeout(function(){
+        var b = document.querySelector('[data-k="tomove"]');
+        if (b) b.click();
+      }, 200);
+    }
+  }, 260);
 }
 
 /* animate 只在「用户主动切周」时为 true；调课刷新、问答跳转不翻页，否则太吵 */

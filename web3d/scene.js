@@ -184,6 +184,23 @@ function makeLabelTexture(w) {
     g.beginPath(); g.moveTo(0, y); g.lineTo(cw, y); g.stroke();
   }
 
+  /* 四角 L 形角标 + 极细外框：让人一眼看出这是"一张有版心的档案"，
+     而不是一块随手贴上去的图。参考图里也是这个做法。 */
+  g.strokeStyle = '#c9c3b6';
+  g.lineWidth = 2;
+  g.strokeRect(1, 1, cw - 2, ch - 2);
+  g.strokeStyle = '#151713';
+  g.lineWidth = 4;
+  const corner = 46;
+  [[0, 0, 1, 1], [cw, 0, -1, 1], [0, ch, 1, -1], [cw, ch, -1, -1]]
+    .forEach(([x, y, dx, dy]) => {
+      g.beginPath();
+      g.moveTo(x + dx * corner, y);
+      g.lineTo(x, y);
+      g.lineTo(x, y + dy * corner);
+      g.stroke();
+    });
+
   g.textBaseline = 'middle';
   g.textAlign = 'left';
 
@@ -237,24 +254,25 @@ function makeLabelTexture(w) {
     g.fillRect(x + 3, y + 3, 6, hh - 6);
 
     /* 三行：课名（深、重）/ 地点（灰）/ 老师（更淡），和参考图一致 */
-    const name = c.name.length > 6 ? c.name.slice(0, 6) : c.name;
+    const name = c.name.length > 7 ? c.name.slice(0, 7) : c.name;
     g.fillStyle = '#1a1b16';
-    /* 格宽 128，左边距 14；6 个字用 17px 才不会顶到右边界 */
-    const fs = name.length >= 6 ? 17 : (name.length >= 5 ? 18 : (name.length >= 4 ? 20 : 22));
+    /* 格宽 128、左边距 14，可用 114；按字数挑字号，宁小不裁 */
+    const fs = name.length >= 7 ? 15 : (name.length >= 6 ? 16.5
+      : (name.length >= 5 ? 18 : (name.length >= 4 ? 20 : 22)));
     g.font = '600 ' + fs + 'px ' + SANS;
-    g.fillText(name, x + 14, y + 28);
+    g.fillText(name, x + 12, y + 28);
 
     /* 只去掉"东校区"这种前缀，楼名和房间号要留着——
        只显示"208"的话，一眼看不出在哪栋楼 */
     const room = (c.room || c.location || '').replace(/^[东南西北]校区/, '');
     g.fillStyle = '#8b8578';
     g.font = '400 15px ' + SANS;
-    g.fillText(room.length > 9 ? room.slice(0, 9) : room, x + 14, y + 54);
+    g.fillText(room.length > 9 ? room.slice(0, 9) : room, x + 12, y + 54);
 
     if (c.teacher) {
       g.fillStyle = '#a8a294';
       g.font = '400 14px ' + SANS;
-      g.fillText(c.teacher, x + 14, y + 76);
+      g.fillText(c.teacher, x + 12, y + 76);
     }
   }
 
@@ -347,6 +365,7 @@ for (let c = 0; c < RAIL_N; c++) {
     col: c, week: w, x: 0, busy: m.busy,
     baseY: (H * m.hRatio * jit) / 2,
     holders: [], body: null, cap: null,
+    hRatio: m.hRatio,
     mats: [m.side, m.face, m.top, m.cap],
     baseOpacity: m.busy ? 1 : 0.82,
     capOpacity: m.busy ? 1 : 0.35,
@@ -1038,6 +1057,10 @@ function tick(now) {
 
     /* 只有第 0 排会抬、会拔；**不转身**——转的是镜头，不是档案。
        后排是背景，跟着横向滑动就够。 */
+    /* 架子上空周矮一截是"这一周没课"的记号；
+       抽出来看的时候不该还矮着——那是内容为空，不是档案尺寸不同。 */
+    r.body.scale.y = r.hRatio + (1 - r.hRatio) * e2;
+
     const front = r.holders[0];
     /* 朝镜头方向（-x）带出来，脱离那一排 */
     front.position.set(r.x - EX.out * e2, py, 0);
