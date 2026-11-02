@@ -6,18 +6,21 @@ const DATA = window.DATA || { courses: [], maxWeek: 17, start: '2026-08-31' };
 /* 参考图里的脊不是"书"，是**极长的长条板**：脊背很窄（W）、高度中等（H）、
    深度方向延伸出去很远（T）。一排平行铺开，靠透视形成"一片"的观感。
    之前 T=0.32 做成的是"书"，怎么调角度都不像。 */
-const W = 0.17, H = 1.30, T = 8.0;
+/* 一块档案 = 一张课表：长边与高按 8 列 × 7 行的比例（8:7），
+   不再用 8 : 1.3 的细长条。细长条无论怎么转，抽出来都只是一根横杠。 */
+const W = 0.17, H = 1.30, T = H * 8 / 7;
 const GAP_X = 0.245;
 const LIFT = 1.15;
 
 /* 抽出后的状态：往前拉、转正、缩小、停在左侧 */
 const EX = {
-  rise: 2.0,        // 从上方拔出：先抬到邻居脊顶之上，再转身，不会扫到别人
-  y: 1.72,          // 落定后的中心高度（大致对准画面中线）
-  scale: 0.33,
-  /* 转到"差 35° 才正对"就停：真的转满 90° 会变成贴在屏幕上的一根横条，
-     留出这 35°，长边仍有纵深、厚度也露出来，才像一件立体的东西。 */
-  tilt: 0.60,
+  rise: 1.9,        // 从上方拔出：先抬到邻居脊顶之上
+  y: 1.20,          // 落定后的中心高度
+  scale: 1,         // 不缩放——尺寸靠镜头距离调，缩模型比例就假了
+  /* 朝镜头方向带出来一段。不脱离那一排的话，主体和邻居在同一深度上，
+     雾没法只吃掉背景，近处那几根会直接盖在主体前面。 */
+  out: 10,
+  tilt: 0.18,       // 稍微偏一点，露出厚度
 };
 
 if (/[?&]still=1/.test(location.search)) document.body.classList.add('still');
@@ -46,7 +49,7 @@ camera.lookAt(0.35, 0.95, -1.2);
    圆心放在抽出的档案身上，半径/仰角/方位角各走一条。 */
 const CAM_PIVOT = new THREE.Vector3(-1.55, 1.35, 0);
 const CAM_FROM = new THREE.Spherical(31.06, 1.440, -0.474);   // 初始机位反算
-const CAM_TO = new THREE.Spherical(26.0, 1.160, -1.404);      // 侧面 + 抬高俯看
+const CAM_TO = new THREE.Spherical(20.0, 1.470, -1.404);      // 侧面、接近平视
 const camLookAt = new THREE.Vector3();
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
@@ -155,87 +158,100 @@ const labelGeo = new THREE.PlaneGeometry(T, H);
    没有它，抽出来的就是一块空白板——脊上那点 NO.xx 是印在窄端的，
    一转身就背过去了。 */
 function makeLabelTexture(w) {
-  /* 直接印在档案surface上的周课表：左栏是档案号，右侧 7 列就是这一周。
-     它不是给"读"的（那么小的字本来也读不动），是让抽出来的东西
-     真的像一份写着内容的档案，而不是一块空白板。 */
-  const cw = 2048, ch = 336;
+  /* 这块面上印的就是**这一周的课表本身**：8 列（节次 + 七天）、7 行（表头 + 六节），
+     和模型 8:7 的长宽比一一对应，所以格子是方的，不会被拉扁。
+     远看是一块印满字的面，抽到眼前才读得清。 */
+  const cw = 1024, ch = 896;
+  const HEAD = 96;
+  const colW = cw / 8;
+  const rowH = (ch - HEAD) / 6;
   const cv = document.createElement('canvas');
   cv.width = cw; cv.height = ch;
   const g = cv.getContext('2d');
   const SANS = '"Helvetica Neue", Arial, sans-serif';
+
   g.fillStyle = '#f8f6f1';
   g.fillRect(0, 0, cw, ch);
 
+  /* 网格 */
   g.strokeStyle = '#d8d2c5';
   g.lineWidth = 2;
-  const hline = (y) => { g.beginPath(); g.moveTo(0, y); g.lineTo(cw, y); g.stroke(); };
-  const vline = (x, a, b) => { g.beginPath(); g.moveTo(x, a); g.lineTo(x, b); g.stroke(); };
-  hline(30); hline(ch - 31); vline(320, 30, ch - 31);
+  for (let c = 0; c <= 8; c++) {
+    g.beginPath(); g.moveTo(c * colW, 0); g.lineTo(c * colW, ch); g.stroke();
+  }
+  for (let r = 0; r <= 6; r++) {
+    const y = HEAD + r * rowH;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(cw, y); g.stroke();
+  }
 
   g.textBaseline = 'middle';
   g.textAlign = 'left';
-  g.fillStyle = '#9a9487';
-  g.font = '500 22px ' + SANS;
-  g.fillText('COURSE ARCHIVE', 40, 84);
-  g.fillText('TIMETABLE / WEEK', 40, 116);
+
+  /* 表头左上：档案号 */
   g.fillStyle = '#151713';
-  g.font = '600 46px ' + SANS;
-  g.fillText('NO.' + pad2(w), 40, 178);
-  g.fillStyle = '#8b8578';
-  g.font = '500 19px ' + SANS;
+  g.font = '600 34px ' + SANS;
+  g.fillText('NO.' + pad2(w), 16, 40);
+  g.fillStyle = '#9a9487';
+  g.font = '500 16px ' + SANS;
   const list = weekCourses(w);
   const secs = list.reduce((n, c) => n + (c.endPeriod - c.startPeriod + 1), 0);
   g.fillText('WEEK ' + pad2(w) + ' · ' + new Set(list.map(c => c.name)).size
-    + ' 门课 · ' + secs + ' 节', 40, 240);
-  g.fillText(cnRange(w), 40, 272);
+    + ' 门 · ' + secs + ' 节', 16, 70);
 
-  /* 7 列星期 */
-  const x0 = 320, colW = (cw - x0) / 7;
-  const top = 30, bot = ch - 31;
+  /* 表头：七天 */
   for (let d = 1; d <= 7; d++) {
-    const x = x0 + (d - 1) * colW;
-    if (d > 1) vline(x, top, bot);
+    const x = d * colW;
     const dt = isoOf(w, d);
-    g.textAlign = 'left';
     g.fillStyle = '#151713';
-    g.font = '500 27px ' + SANS;
-    g.fillText(DAY_NAMES[d], x + 20, 82);
+    g.font = '500 24px ' + SANS;
+    g.fillText(DAY_NAMES[d], x + 12, 40);
     g.fillStyle = '#a8a294';
-    g.font = '400 19px ' + SANS;
-    g.fillText(pad2(dt.getMonth() + 1) + '/' + pad2(dt.getDate()), x + 20, 112);
-    hline0(g, x + 20, x + colW - 20, 134);
+    g.font = '400 17px ' + SANS;
+    g.fillText(pad2(dt.getMonth() + 1) + '/' + pad2(dt.getDate()), x + 12, 70);
+  }
 
-    const ofDay = list.filter(c => c.day === d).sort((a, b) => a.startPeriod - b.startPeriod);
-    ofDay.slice(0, 4).forEach((c, i) => {
-      const y = 168 + i * 42;
-      g.fillStyle = colorOf(c.name);
-      g.fillRect(x + 20, y - 13, 5, 28);
-      const t0 = (DATA.periodTimes && DATA.periodTimes[c.startPeriod]) || '';
-      g.fillStyle = '#a8a294';
-      g.font = '400 16px ' + SANS;
-      g.fillText(t0, x + 38, y - 9);
-      g.fillStyle = '#2b2c25';
-      g.font = '400 23px ' + SANS;
-      g.fillText(c.name.length > 7 ? c.name.slice(0, 7) : c.name, x + 38, y + 14);
-    });
-    if (ofDay.length > 4) {
-      g.fillStyle = '#a8a294';
-      g.font = '400 16px ' + SANS;
-      g.fillText('+' + (ofDay.length - 4), x + 20, 168 + 4 * 42 - 8);
-    }
+  /* 节次列 */
+  for (let r = 0; r < 6; r++) {
+    const y = HEAD + r * rowH;
+    const sp = r * 2 + 1;
+    g.fillStyle = '#151713';
+    g.font = '500 20px ' + SANS;
+    g.fillText(sp + '-' + (sp + 1), 12, y + 34);
+    const t0 = (DATA.periodTimes && DATA.periodTimes[sp]) || '';
+    g.fillStyle = '#a8a294';
+    g.font = '400 15px ' + SANS;
+    g.fillText(t0, 12, y + 62);
+  }
+
+  /* 课程块 */
+  for (const c of list) {
+    const r1 = Math.ceil(c.startPeriod / 2);
+    const r2 = Math.ceil(c.endPeriod / 2);
+    if (r1 < 1 || r1 > 6) continue;
+    const span = Math.max(1, Math.min(r2 - r1 + 1, 7 - r1));
+    const x = c.day * colW;
+    const y = HEAD + (r1 - 1) * rowH;
+    const hh = span * rowH;
+
+    g.fillStyle = '#ffffff';
+    g.fillRect(x + 3, y + 3, colW - 6, hh - 6);
+    g.fillStyle = colorOf(c.name);
+    g.fillRect(x + 3, y + 3, 6, hh - 6);
+
+    const name = c.name.length > 6 ? c.name.slice(0, 6) : c.name;
+    g.fillStyle = '#2b2c25';
+    g.font = '500 ' + (name.length > 4 ? 19 : 22) + 'px ' + SANS;
+    g.fillText(name, x + 16, y + 30);
+    g.fillStyle = '#9a9487';
+    g.font = '400 14px ' + SANS;
+    const room = (c.room || c.location || '');
+    g.fillText(room.length > 9 ? room.slice(-6) : room, x + 16, y + 54);
   }
 
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   return tex;
-}
-function hline0(g, a, b, y) {
-  g.strokeStyle = '#e2ded7';
-  g.lineWidth = 1.5;
-  g.beginPath(); g.moveTo(a, y); g.lineTo(b, y); g.stroke();
-  g.strokeStyle = '#d8d2c5';
-  g.lineWidth = 2;
 }
 
 const labelTex = new Map();
@@ -255,7 +271,7 @@ function labelMaterial(w) {
 const PERIOD = Math.max(1, maxWeek);
 const COPIES = 3;
 const RAIL_N = PERIOD * COPIES;
-const ROWS = 4;                       // 纵深 4 排，负责把画面下半/上半填满
+const ROWS = 6;                       // 脊变短了，多铺几排才填得满纵深
 const RAIL_MID = (RAIL_N - 1) / 2;
 
 const rails = [];
@@ -358,6 +374,16 @@ for (let c = 0; c < RAIL_N; c++) {
       back.rotation.y = -Math.PI / 2;
       back.visible = false;
       body.add(back);
+      /* 当前聚焦的那一天：一条极淡的竖带，跟着 ↑↓ 在板面上走 */
+      const markMat = new THREE.MeshBasicMaterial({
+        color: 0x151713, transparent: true, opacity: 0.07, depthWrite: false,
+      });
+      const mark = new THREE.Mesh(new THREE.PlaneGeometry(T / 8, H), markMat);
+      mark.position.set(-T / 2 + (0.5 / 8) * T, 0, 0.02);
+      mark.visible = false;
+      front.add(mark);
+      rail.mark = mark;
+      rail.markMat = markMat;
       rail.label = front;
       rail.labelBack = back;
       rail.labelMat = labelMat;
@@ -408,6 +434,10 @@ function idleBreath(i, time) {
 function nearestOccurrence(value, center, period) {
   return value + Math.floor((center - value + period / 2) / period) * period;
 }
+
+/* 第二维：抽出来的这一周里，当前聚焦的是星期几（1–7）。
+   ← → 换周，↑ ↓ 在这一周的七天里翻——和 RhineLabUI 的 lane × row 是同一个意思。 */
+let selectedDay = 1;
 
 let selectedAt = 0;                 // 上次选中的时刻，用来算波纹年龄
 let selected = Math.max(0, Math.min(PERIOD - 1, currentWeek() - 1));
@@ -463,6 +493,15 @@ function select(i) {
   if (sheetOpen && nextWeek !== lastSheetWeek) openWeekSheet(nextWeek);
 }
 
+function stepDay(dir) {
+  selectedDay += dir;
+  if (selectedDay > 7) { selectedDay = 1; select(selected + 1); }
+  else if (selectedDay < 1) { selectedDay = 7; select(selected - 1); }
+  else { paintOverlay(); if (sheetOpen) syncDay(); }
+  syncDayMark();
+  if (sheetOpen) syncDay();
+}
+
 addEventListener('keydown', (ev) => {
   const k = ev.key;
   if (k === 'ArrowRight') { select(selected + 1); ev.preventDefault(); }
@@ -480,6 +519,25 @@ const E = (id) => document.getElementById(id);
 function setText(id, txt) {
   const n = E(id);
   if (n) n.textContent = txt;
+}
+
+/* ---------- 第二维：周内聚焦的那一天 ---------- */
+function syncDayMark() {
+  if (!focusRail || !focusRail.mark) return;
+  /* 纹理是 8 列（节次 + 七天），第 d 天占 u ∈ [d/8, (d+1)/8]，
+     plane 的 u=0 对应局部 x = -T/2 */
+  focusRail.mark.position.x = -T / 2 + ((selectedDay - 0.5) / 8) * T;
+}
+
+/* 右侧面板跟着走：标题换成"周三 · 10/28"，清单里那一列标出来 */
+function syncDay() {
+  const week = selected + 1;
+  const dt = isoOf(week, selectedDay);
+  setText('wsCat', DAY_NAMES[selectedDay] + ' · '
+    + pad2(dt.getMonth() + 1) + '/' + pad2(dt.getDate()));
+  document.querySelectorAll('#wsList li').forEach(li => {
+    li.classList.toggle('on', +li.dataset.day === selectedDay);
+  });
 }
 
 /* ---------- 滚动编号 ----------
@@ -665,7 +723,7 @@ function renderList(list) {
   host.innerHTML = list.map(c => {
     const t0 = (DATA.periodTimes && DATA.periodTimes[c.startPeriod]) || '';
     const t1 = (DATA.periodTimes && DATA.periodTimes[c.endPeriod + 1]) || '';
-    return '<li><i class="bar" style="--c:' + colorOf(c.name) + '"></i>'
+    return '<li data-day="' + c.day + '"><i class="bar" style="--c:' + colorOf(c.name) + '"></i>'
       + '<div class="t">' + (c.startPeriod) + '-' + (c.endPeriod)
       + (t0 ? '<br>' + t0 : '') + '</div>'
       + '<div class="n"><b>' + esc(c.name) + '</b><span>' + esc(c.room || c.location || '')
@@ -767,6 +825,8 @@ function openWeekSheet(week) {
   renderGrid(week, list);
   renderList(list);
   renderStat(week, list);
+  syncDayMark();
+  syncDay();
   setTab(activeTab);
   revealPane(swap);
 
@@ -875,11 +935,8 @@ resize();
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let last = performance.now();
 
-/* 抽出后板子要正对观者：绕 y 转到 +x 面朝相机，但少转 tilt 那么多，
-   留出一点斜角，免得拍成一张纯平面的横条。 */
-const FACE_ROT = Math.atan2(
-  camera.position.x - FOCUS_OPEN, camera.position.z
-) - Math.PI / 2 + EX.tilt - group.rotation.y;
+/* 板子不转身——朝向靠镜头绕过去解决；这里只留一个占位变量 */
+let ckNow = 0;
 
 function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -891,6 +948,11 @@ function tick(now) {
   /* 镜头绕行的进度先算：柱阵列要按它压暗背景，得在相机段之前就有值 */
   camK += ((sheetOpen ? 1 : 0) - camK) * Math.min(1, dt * (reduce ? 40 : 3.4));
   const ck = smooth(camK);
+  ckNow = ck;
+
+  group.updateMatrixWorld();
+  CAM_PIVOT.set(FOCUS_OPEN - EX.out * ck, 1.35, 0);
+  group.localToWorld(CAM_PIVOT);
 
   const fxTarget = sheetOpen ? FOCUS_OPEN : FOCUS_CLOSED;
   focusX += (fxTarget - focusX) * Math.min(1, dt * (reduce ? 40 : 4.2));
@@ -949,18 +1011,39 @@ function tick(now) {
       + EX.rise * e1 * (1 - e2) + (EX.y - r.baseY) * e2;
     const sc = 1 + (EX.scale - 1) * e2;
 
+    /* 详情态把其余档案压到几乎看不见：镜头绕到侧面时，那一排会在画面里
+       叠成一堵墙，把抽出来的这一份埋掉。雾做不到这件事——它们和主体
+       的距离只差一两个单位，雾只能整片糊，分不出谁是谁。 */
+    const dim = isFocus ? 1 : 1 - 0.93 * ck;
+    for (let mi = 0; mi < 4; mi++) {
+      const mt = r.mats[mi];
+      const base = mi === 3 ? r.capOpacity : r.baseOpacity;
+      const op2 = base * dim;
+      if (Math.abs((mt.opacity || 0) - op2) > 0.004) {
+        mt.opacity = op2;
+        mt.transparent = op2 < 0.999;
+        mt.depthWrite = op2 > 0.96;
+      }
+    }
+
     /* 只有第 0 排会抬、会拔；**不转身**——转的是镜头，不是档案。
        后排是背景，跟着横向滑动就够。 */
     const front = r.holders[0];
-    front.position.set(r.x, py, 0);
+    /* 朝镜头方向（-x）带出来，脱离那一排 */
+    front.position.set(r.x - EX.out * e2, py, 0);
     front.rotation.y = 0;
     front.scale.setScalar(sc);
     /* 标签跟着拔出进度淡入，塞回去时一起消失 */
     r.label.visible = e2 > 0.02;
     if (r.labelBack) r.labelBack.visible = r.label.visible;
+    if (r.mark) r.mark.visible = e2 > 0.4;
     r.labelMat.opacity = e2;
     for (let row = 1; row < ROWS; row++) {
-      r.holders[row].position.set(r.x, r.baseY, -row * T);
+      const h = r.holders[row];
+      h.position.set(r.x, r.baseY, -row * T);
+      /* 焦点那一根的"纵深副本"是假的：抽出来之后如果还留着，
+         它们在侧视里会并排成一堵墙，把主体自己埋掉。 */
+      h.visible = !(isFocus && ck > 0.15);
     }
   }
 
@@ -981,7 +1064,7 @@ function tick(now) {
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
-    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 1.02 * ck);
+    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 0.52 * ck);
   camera.lookAt(camLookAt);
 
   /* 底部滚动周次条：跟着轨道位置一起平移，

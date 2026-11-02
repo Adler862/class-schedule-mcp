@@ -252,7 +252,9 @@
 
   /* 清单 */
   .clist{margin:0;padding:0;list-style:none}
-  .clist li{display:flex;gap:14px;padding:11px 0;border-bottom:1px solid #e2ded7}
+  .clist li{display:flex;gap:14px;padding:11px 0;border-bottom:1px solid #e2ded7;
+    transition:background 180ms linear,box-shadow 180ms linear}
+  .clist li.on{background:#efe9dc;box-shadow:-6px 0 0 #151713 inset}
   .clist .t{flex:none;width:64px;font-size:10.5px;color:#807b70;
     font-variant-numeric:tabular-nums;letter-spacing:.2px;padding-top:2px}
   .clist .n{flex:1;min-width:0}
