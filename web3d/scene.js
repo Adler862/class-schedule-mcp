@@ -382,10 +382,13 @@ for (let c = 0; c < RAIL_N; c++) {
     holder.position.set(0, rail.baseY, -r * T);
     holder.add(body);
 
-    const cap = new THREE.Mesh(capGeo, m.cap);
-    cap.position.set(0, H / 2 + 0.012, 0);
-    cap.castShadow = r === 0;
-    body.add(cap);
+    /* 脊顶色标只有最前排看得见，后排建了也是被挡住，白占 250 多个 draw */
+    if (r === 0) {
+      const cap = new THREE.Mesh(capGeo, m.cap);
+      cap.position.set(0, H / 2 + 0.012, 0);
+      cap.castShadow = true;
+      body.add(cap);
+    }
 
     group.add(holder);
     rail.holders.push(holder);
@@ -975,7 +978,10 @@ function tick(now) {
 
   /* 焦点横坐标跟着面板开合，整条轨道因此整体让位到左半边 */
   /* 镜头绕行的进度先算：柱阵列要按它压暗背景，得在相机段之前就有值 */
-  camK += ((sheetOpen ? 1 : 0) - camK) * Math.min(1, dt * (reduce ? 40 : 3.4));
+  /* 抽出和绕镜头同时进行，但整体压到 0.4 秒左右做完。
+     试过"先抽出、再绕过去"，结果中间那 0.3 秒更难看：镜头已经绕到侧面、
+     档案还没离架，画面上是一排别人的侧脸。与其细调过程，不如让它快到看不清。 */
+  camK += ((sheetOpen ? 1 : 0) - camK) * Math.min(1, dt * (reduce ? 40 : 6.0));
   const ck = smooth(camK);
   ckNow = ck;
 
@@ -1091,9 +1097,12 @@ function tick(now) {
 
   /* 雾跟着相机距离走：关着时推到无穷远（等于没有），
      打开时收到主角前后十来个单位，背景那一排就消失了。 */
+  /* 雾要跑在镜头前面：镜头绕行的中途会从斜上方掠过整排档案，
+     那一瞬间画面上全是顶面的条纹。前段拉快，过半时背景已经吃干净。 */
+  const fogK = Math.pow(ck, 0.4);
   const camDist = camera.position.distanceTo(CAM_PIVOT);
-  scene.fog.near = camDist + (1 - ck) * 900 - ck * 1.0;
-  scene.fog.far = camDist + (1 - ck) * 1800 + ck * 9;
+  scene.fog.near = camDist + (1 - fogK) * 900 - fogK * 1.0;
+  scene.fog.far = camDist + (1 - fogK) * 1800 + fogK * 9;
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
