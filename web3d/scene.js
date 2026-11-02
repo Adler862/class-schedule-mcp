@@ -233,6 +233,30 @@ function parseGLB(b64) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     if (nor.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    if (uvs.length && mesh.name === 'archive_body') {
+      /* body 有两个材质槽（侧面 / 脊面），各自是一块独立的 UV。
+         两个都要分别铺满 0-1，否则脊面上那排 NO.xx 会被拉伸成一片糊。 */
+      const idxArr = idx.length ? idx : null;
+      for (const gr of groups) {
+        const verts = new Set();
+        for (let k = gr.start; k < gr.start + gr.count; k++) {
+          verts.add(idxArr ? idxArr[k] : k);
+        }
+        let mnU = 1e9, mxU = -1e9, mnV = 1e9, mxV = -1e9;
+        for (const v of verts) {
+          const u = uvs[v * 2], vv = uvs[v * 2 + 1];
+          if (u < mnU) mnU = u;
+          if (u > mxU) mxU = u;
+          if (vv < mnV) mnV = vv;
+          if (vv > mxV) mxV = vv;
+        }
+        const du = (mxU - mnU) || 1, dv = (mxV - mnV) || 1;
+        for (const v of verts) {
+          uvs[v * 2] = (uvs[v * 2] - mnU) / du;
+          uvs[v * 2 + 1] = (uvs[v * 2 + 1] - mnV) / dv;
+        }
+      }
+    }
     if (uvs.length) {
       /* cube_project 给的 UV 是按立方体尺寸走的，范围不是 0–1，
          课表只盖住板的一角。这里按包围盒拉回 0–1 正好铺满。
@@ -259,11 +283,11 @@ function parseGLB(b64) {
       g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     }
     if (idx.length) g.setIndex(idx);
-    for (const gr of groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
     /* 节点上的位移/旋转要自己套上去：face 是靠 node.translation 挪到板前面的，
        只读顶点的话它会正好叠在本体中间。 */
     const nx = nodeXf[mesh.name];
     if (nx) g.applyMatrix4(nx);
+    for (const gr of groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
     g.computeBoundingSphere();
     geos[mesh.name] = g;
   }
@@ -404,6 +428,35 @@ function makeLabelTexture(w) {
   return tex;
 }
 
+/* 架子上一眼认周次用的小标签：印在板顶面靠脊那一端 */
+function weekTagTexture(w) {
+  const cw = 256, ch = 56;
+  const cv = document.createElement('canvas');
+  cv.width = cw; cv.height = ch;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#f8f6f1';
+  g.fillRect(0, 0, cw, ch);
+  g.fillStyle = '#151713';
+  g.textAlign = 'left';
+  g.textBaseline = 'middle';
+  g.font = '600 27px "Helvetica Neue", Arial, sans-serif';
+  g.fillText('WEEK', 12, ch / 2);
+  g.font = '300 40px "Helvetica Neue", Arial, sans-serif';
+  g.fillText(pad2(w), 108, ch / 2 + 2);
+  g.strokeStyle = '#c9c3b6';
+  g.lineWidth = 2;
+  g.strokeRect(1, 1, cw - 2, ch - 2);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+const weekTagTex = new Map();
+function weekTag(w) {
+  if (!weekTagTex.has(w)) weekTagTex.set(w, weekTagTexture(w));
+  return weekTagTex.get(w);
+}
+
 const labelTex = new Map();
 function labelTexture(w) {
   if (!labelTex.has(w)) {
@@ -519,6 +572,17 @@ for (let c = 0; c < RAIL_N; c++) {
         const sheet = new THREE.Mesh(PARTS.archive_face, m.print);
         body.add(sheet);
       }
+      /* 周次标签贴在板面上边缘靠脊那一端：
+         顶面在架子上几乎是平的（俯角只有 7°），贴上去就被压成一条线；
+         上边缘这条带子正对和架子上都能看到。 */
+      const tag = new THREE.Mesh(
+        new THREE.BoxGeometry(0.002, H * 0.075, T * 0.30),
+        new THREE.MeshBasicMaterial({ map: weekTag(w) })
+      );
+      tag.position.set(-W / 2 - 0.001, H / 2 - H * 0.055, T / 2 - T * 0.20);
+      body.add(tag);
+      rail.tag = tag;
+
       if (PARTS.archive_clip) {
         const clip = new THREE.Mesh(PARTS.archive_clip, m.top);
         body.add(clip);
@@ -656,10 +720,13 @@ canvas.addEventListener('click', (ev) => {
   pressRail = r;
   pressAt = performance.now() / 1000;
   const i = r.week - 1;
-  /* 左键点脊就直接打开课表。点的是当前已经打开的那一根 → 收起。 */
+  /* 三段式：
+     点别的档案 → 只把它提到最高位（预览），不急着开；
+     再点同一根   → 才打开课表；
+     面板已经开着时点同一根 → 收起。 */
   if (sheetOpen && i === selected) { closeWeekSheet(); return; }
+  if (i === selected) { openWeekSheet(r.week); return; }
   select(i);
-  if (!sheetOpen) openWeekSheet(r.week);
 });
 
 /* 首尾循环：17 周点 → 回到第 1 周，1 周点 ← 回到第 17 周。
@@ -1238,6 +1305,9 @@ function tick(now) {
     front.scale.setScalar(sc);
     /* 标签跟着拔出进度淡入，塞回去时一起消失 */
     if (r.mark) r.mark.visible = e2 > 0.4;
+    /* 周次标签只在架子上有用；详情态板上已经印着 NO.xx / WEEK xx，
+       而且它不吃 dim，会变成几块飘在画面里的白牌子。 */
+    if (r.tag) r.tag.visible = ck < 0.35;
     r.labelMat.opacity = e2;
     for (let row = 1; row < ROWS; row++) {
       const h = r.holders[row];
