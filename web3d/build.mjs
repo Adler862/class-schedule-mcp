@@ -73,9 +73,9 @@ try {
   glbB64 = glb.toString('base64');
 } catch { /* 没有 GLB 就退回程序化的盒子 */ }
 payload.glb = glbB64;
-/* 默认不用 GLB：Blender 那版会丢掉"脊面印 NO.xx"——那块是单 primitive、
-   单材质，而档案架靠脊面编号辨认。要启用得先给 body 分好材质槽。 */
-payload.useGlb = false;
+/* body 已经在 Blender 里拆成"侧面 / 脊面"两个材质槽，
+   接进 three 时用 [side, face] 两个材质，脊面那排 NO.xx 保得住。 */
+payload.useGlb = true;
 
 const shell = await readFile(join(here, 'shell.html'), 'utf8');
 const html = shell

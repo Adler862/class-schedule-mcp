@@ -19,6 +19,7 @@ def box(name, sx, sy, sz, loc, bevel=0.006, seg=2):
     bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
     o = bpy.context.object
     o.name = name
+    o.data.name = name      # 导出的 mesh 名要跟着走，否则解析时拿不到
     o.scale = (sx / 2, sy / 2, sz / 2)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     # 先给 UV：一块板只要把六个面各自铺满 0–1 就够了，
@@ -41,13 +42,21 @@ def box(name, sx, sy, sz, loc, bevel=0.006, seg=2):
 # 主体：厚度 W、长 T、高 H（Blender 里 y 放"长"，z 放"高"）
 body = box('archive_body', W, T, H, (0, 0, 0), bevel=0.008, seg=2)
 
+# 主体要分两个材质槽：侧面一色，脊面（-y，导出后是 glTF 的 +z）另一色。
+# 不分槽的话整个 body 是单 primitive，接进 three 就没法给脊面单独贴编号，
+# 档案架上那排 NO.xx 会直接消失。
+body.data.materials.append(bpy.data.materials.new('body_side'))
+body.data.materials.append(bpy.data.materials.new('body_spine'))
+for poly in body.data.polygons:
+    if poly.normal.y < -0.85:
+        poly.material_index = 1
+
 # 正面那层纸：比主体薄一点，朝 -x 微微凸出
 face = box('archive_face', 0.012, T - 0.04, H - 0.04,
            (-W / 2 - 0.004, 0, 0), bevel=0.003, seg=1)
 
-# 顶部一条细标签夹
-clip = box('archive_clip', 0.028, 0.16, 0.03, (0, T / 2 - 0.10, H / 2 + 0.006),
-           bevel=0.004, seg=1)
+# 顶部标签夹先不做：它在正视图里就是板外浮着的一小块白，
+# 起了反作用。等以后有斜视角展示时再加回来。
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'archive-board.glb')
 bpy.ops.export_scene.gltf(

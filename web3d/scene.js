@@ -193,18 +193,34 @@ function parseGLB(b64) {
 
   const geos = {};
   for (const mesh of json.meshes || []) {
-    for (const pr of mesh.primitives) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(readAcc(pr.attributes.POSITION), 3));
-      if (pr.attributes.NORMAL !== undefined) {
-        g.setAttribute('normal', new THREE.BufferAttribute(readAcc(pr.attributes.NORMAL), 3));
-      }
-      if (pr.attributes.TEXCOORD_0 !== undefined) {
-        g.setAttribute('uv', new THREE.BufferAttribute(readAcc(pr.attributes.TEXCOORD_0), 2));
-      }
-      if (pr.indices !== undefined) g.setIndex(new THREE.BufferAttribute(readAcc(pr.indices), 1));
-      geos[mesh.name] = g;
-    }
+    /* 一个 mesh 可能有多个 primitive（每个对应一个材质槽）。
+       拼成一个 geometry，用 groups 记住每段属于哪个材质槽。 */
+    const pos = [], nor = [], uvs = [], idx = [];
+    const groups = [];
+    let vBase = 0, iBase = 0;
+    mesh.primitives.forEach((pr, pi) => {
+      const P = readAcc(pr.attributes.POSITION);
+      const N = pr.attributes.NORMAL !== undefined ? readAcc(pr.attributes.NORMAL) : null;
+      const U = pr.attributes.TEXCOORD_0 !== undefined ? readAcc(pr.attributes.TEXCOORD_0) : null;
+      const I = pr.indices !== undefined ? readAcc(pr.indices) : null;
+      const vCount = P.length / 3;
+      for (let i = 0; i < P.length; i++) pos.push(P[i]);
+      if (N) for (let i = 0; i < N.length; i++) nor.push(N[i]);
+      if (U) for (let i = 0; i < U.length; i++) uvs.push(U[i]);
+      if (I) for (let i = 0; i < I.length; i++) idx.push(I[i] + vBase);
+      const iCount = I ? I.length : vCount;
+      groups.push({ start: iBase, count: iCount, materialIndex: pi });
+      vBase += vCount;
+      iBase += iCount;
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (nor.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    if (uvs.length) g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    if (idx.length) g.setIndex(idx);
+    for (const gr of groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
+    g.computeBoundingSphere();
+    geos[mesh.name] = g;
   }
   return geos;
 }
@@ -434,7 +450,22 @@ for (let c = 0; c < RAIL_N; c++) {
     lift: 0, ex: 0, spring: { value: 0, velocity: 0 },
   };
   for (let r = 0; r < ROWS; r++) {
-    const body = new THREE.Mesh(bodyGeo, [m.side, m.side, m.top, m.side, m.face, m.side]);
+    /* 前排用 Blender 出的真模型（倒角 + 一层纸 + 顶部夹），
+       后排还是程序化盒子——后排永远只露个边，没必要上精模。 */
+    let body;
+    if (r === 0 && PARTS && PARTS.archive_body) {
+      body = new THREE.Mesh(PARTS.archive_body, [m.side, m.face]);
+      if (PARTS.archive_face) {
+        const sheet = new THREE.Mesh(PARTS.archive_face, m.top);
+        body.add(sheet);
+      }
+      if (PARTS.archive_clip) {
+        const clip = new THREE.Mesh(PARTS.archive_clip, m.top);
+        body.add(clip);
+      }
+    } else {
+      body = new THREE.Mesh(bodyGeo, [m.side, m.side, m.top, m.side, m.face, m.side]);
+    }
     body.castShadow = r === 0;
     body.receiveShadow = true;
     body.scale.y = m.hRatio * jit;
@@ -1188,7 +1219,7 @@ function tick(now) {
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
-    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 1.08 * ck);
+    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 0.92 * ck);
   camera.lookAt(camLookAt);
 
   /* 底部滚动周次条：跟着轨道位置一起平移，
