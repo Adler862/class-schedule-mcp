@@ -440,13 +440,18 @@
     #thisWeek{grid-column:2;min-height:32px;padding:5px 8px;font-size:10px;letter-spacing:1px}
     .nav{width:30px;height:32px;font-size:19px}
     .week-ticks{gap:5px;margin-bottom:12px}
-    .grid-frame{margin-bottom:20px;padding:7px}
+    /* 手机上把七天挤进 390px，每列只剩 43px，课名两行还看不全。
+       真正的问题不是放不下，是放得下但看不清——让表格横向铺开，
+       列宽回到 66px，只在 .grid-frame 里横滑，标题和控件不动。 */
+    .grid-frame{margin-bottom:20px;padding:7px;
+      overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .grid-frame::-webkit-scrollbar{display:none}
     .corner{width:11px;height:11px}
-    .grid{grid-template-columns:34px repeat(7,minmax(0,1fr))}
-    .ghead{padding:9px 1px 8px;font-size:9px;letter-spacing:0}
-    .ghead b{font-size:11px;letter-spacing:0}
+    .grid{min-width:528px;grid-template-columns:42px repeat(7,minmax(0,1fr))}
+    .ghead{padding:9px 1px 8px;font-size:10px;letter-spacing:0}
+    .ghead b{font-size:12px;letter-spacing:0}
     .gt{padding:8px 0 0}
-    .gt b{font-size:9px;letter-spacing:0}
+    .gt b{font-size:10px;letter-spacing:0}
     .gt span{font-size:8px;letter-spacing:0}
     .cell{min-height:65px}
     .course{gap:2px;margin:3px 1px;padding:5px 2px 5px 3px}
