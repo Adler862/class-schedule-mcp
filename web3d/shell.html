@@ -284,6 +284,21 @@
   .acts{position:absolute;right:clamp(24px,3vw,44px);bottom:52px;
     width:min(340px,42vw);display:flex;align-items:center;
     gap:clamp(12px,1.6vw,22px)}
+  /* 窄屏时这块只剩 164px 宽，里面的字会被压成一列一个字。
+     改成右上对齐的两行，各自按内容撑开。 */
+  /* 窄屏下横着放不下三样东西。只留两个短按钮靠右下：
+     OPEN（打开完整表格）和 EXPORT，文字都收进按钮里。 */
+  @media (max-width:760px){
+    .acts{position:fixed;left:auto;right:12px;bottom:48px;width:auto;
+      display:flex;align-items:center;justify-content:flex-end;gap:10px}
+    .acts .solid{flex:0 0 auto;width:auto;height:40px;padding:0 14px}
+    .acts .solid span{display:none}
+    /* 手机上 EXPORT 挤不下，而且 .ics 在手机端体验本来就差，直接收起 */
+    .acts .export{display:none}
+    .fnote{position:fixed;left:14px;right:14px;bottom:20px;
+      justify-content:space-between}
+  }
+  .acts .solid span,.acts .export{white-space:nowrap}
   .solid{
     flex:1;height:46px;background:#252820;color:#f0eee5;text-decoration:none;
     display:flex;align-items:center;justify-content:space-between;
@@ -453,13 +468,13 @@
 
     <div class="acts">
       <a class="solid" id="wsFull" href="index.html">
-        <span>－ 在完整学期表格中查看</span><em>OPEN</em>
+        <span>－ 完整学期表格</span><em>OPEN</em>
       </a>
       <button class="export" id="wsExport" type="button">EXPORT <span>↓</span></button>
     </div>
 
     <div class="fnote">
-      <span id="wsSource">SOURCE / 教务系统导出 · 已脱敏</span>
+      <span id="wsSource">SOURCE / 教务系统导出</span>
       <span id="wsCount">009 / 017</span>
     </div>
   </div>
