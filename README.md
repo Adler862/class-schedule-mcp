@@ -121,6 +121,12 @@ python tools/build_single.py --courses config/mine.json --out dist/我的课表.
 解析器复用自微信小程序项目 `WXClassTable` 的 `tools/convert_xls.py`，这里只加了
 `--out` / `--start` / `--mask-teacher` 三个参数，解析逻辑没动。
 
+## 截图
+
+| 课表主视图 | 三维档案详情 | 档案架全景 |
+|---|---|---|
+| ![](docs/screenshots/main.png) | ![](docs/screenshots/detail.png) | ![](docs/screenshots/rack.png) |
+
 ## 3D 档案版
 
 在线看：<https://adler862.github.io/class-schedule-mcp/3d.html>
