@@ -152,17 +152,19 @@
     transition:transform 380ms var(--ease), opacity 300ms var(--ease);
     will-change:transform;
   }
+  /* 只过渡 opacity / border-color / background。
+     之前这里还带着 filter，鼠标进网格时几十个格子同时拿到 filter:saturate()，
+     每个都新建一个合成层，GPU 层爆炸后就是那种斜三角的撕裂闪烁。 */
   .cell,.course,.ghead,.gt{
     transition:opacity var(--dur) var(--ease),
-               filter var(--dur) var(--ease),
-               transform var(--dur) var(--ease),
+               background-color var(--dur) var(--ease),
                border-color var(--dur) var(--ease);
   }
   /* 聚焦：非命中行列淡出。同权重靠后声明的规则胜出，所以两类选择器叠加即取并集。 */
   .grid.focus .cell,
   .grid.focus .course,
   .grid.focus .ghead,
-  .grid.focus .gt{ opacity:.34; filter:saturate(.4); }
+  .grid.focus .gt{ opacity:.34; }
   .grid[data-col="1"] [data-c="1"],
   .grid[data-col="2"] [data-c="2"],
   .grid[data-col="3"] [data-c="3"],
@@ -175,7 +177,7 @@
   .grid[data-row="3"] [data-r="3"],
   .grid[data-row="4"] [data-r="4"],
   .grid[data-row="5"] [data-r="5"],
-  .grid[data-row="6"] [data-r="6"]{ opacity:1; filter:none; }
+  .grid[data-row="6"] [data-r="6"]{ opacity:1; }
 
   .cell.xcell{ box-shadow:inset 0 0 0 1.5px var(--fg); }
   .course{ position:relative; z-index:1; }
@@ -187,7 +189,7 @@
   .course:hover{
     border-color:var(--line-strong);
     box-shadow:0 4px 14px rgba(0,0,0,.18);
-    filter:brightness(1.05);
+    background-color:var(--surface-hi, rgba(255,255,255,.04));
   }
   .course:hover::before{
     content:"";position:absolute;top:-1px;right:-1px;width:9px;height:9px;
