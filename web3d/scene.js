@@ -150,6 +150,67 @@ function makeNoTexture(n) {
   return tex;
 }
 
+/* ---------- 极简 GLB 解析 ----------
+   Blender 导出的档案板只有几何：3 个 node，每个一个 primitive。
+   为了不把 GLTFLoader（约 60KB）拉进单文件，这里只读 POSITION / NORMAL /
+   TEXCOORD_0 / indices —— 够用了。 */
+function parseGLB(b64) {
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const dv = new DataView(buf.buffer);
+  if (dv.getUint32(0, true) !== 0x46546c67) return null;   // 'glTF'
+
+  let off = 12;
+  let json = null;
+  let binChunk = null;
+  while (off < dv.byteLength) {
+    const len = dv.getUint32(off, true);
+    const type = dv.getUint32(off + 4, true);
+    const start = off + 8;
+    if (type === 0x4e4f534a) {
+      json = JSON.parse(new TextDecoder().decode(buf.subarray(start, start + len)));
+    } else if (type === 0x004e4942) {
+      binChunk = buf.subarray(start, start + len);
+    }
+    off = start + len + ((4 - (len % 4)) % 4);
+  }
+  if (!json || !binChunk) return null;
+
+  const readAcc = (idx) => {
+    const acc = json.accessors[idx];
+    const bv = json.bufferViews[acc.bufferView];
+    const comp = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array,
+                   5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array }[acc.componentType];
+    const n = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[acc.type];
+    const base = (bv.byteOffset || 0) + (acc.byteOffset || 0);
+    const out = new comp(acc.count * n);
+    // 直接按字节拷贝，避免对齐问题
+    const src = new Uint8Array(binChunk.buffer, binChunk.byteOffset + base, acc.count * n * comp.BYTES_PER_ELEMENT);
+    new Uint8Array(out.buffer).set(src);
+    return out;
+  };
+
+  const geos = {};
+  for (const mesh of json.meshes || []) {
+    for (const pr of mesh.primitives) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(readAcc(pr.attributes.POSITION), 3));
+      if (pr.attributes.NORMAL !== undefined) {
+        g.setAttribute('normal', new THREE.BufferAttribute(readAcc(pr.attributes.NORMAL), 3));
+      }
+      if (pr.attributes.TEXCOORD_0 !== undefined) {
+        g.setAttribute('uv', new THREE.BufferAttribute(readAcc(pr.attributes.TEXCOORD_0), 2));
+      }
+      if (pr.indices !== undefined) g.setIndex(new THREE.BufferAttribute(readAcc(pr.indices), 1));
+      geos[mesh.name] = g;
+    }
+  }
+  return geos;
+}
+
+const PARTS = (DATA.glb && DATA.useGlb) ? parseGLB(DATA.glb) : null;
+
 const bodyGeo = new THREE.BoxGeometry(W, H, T);
 const capGeo = new THREE.BoxGeometry(W * 0.82, 0.022, T * 0.82);
 const labelGeo = new THREE.PlaneGeometry(T, H);

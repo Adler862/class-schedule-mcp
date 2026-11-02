@@ -65,6 +65,18 @@ try {
     JSON.parse(await readFile(join(here, '..', 'config', 'timetable.json'), 'utf8')));
 } catch { /* 用前端兜底 */ }
 
+/* Blender 出的档案板：内嵌成 base64 塞进 DATA。
+   file:// 下没法 fetch，单文件发布也不能多带一个 .glb。 */
+let glbB64 = '';
+try {
+  const glb = await readFile(join(here, '..', 'art', 'archive-board.glb'));
+  glbB64 = glb.toString('base64');
+} catch { /* 没有 GLB 就退回程序化的盒子 */ }
+payload.glb = glbB64;
+/* 默认不用 GLB：Blender 那版会丢掉"脊面印 NO.xx"——那块是单 primitive、
+   单材质，而档案架靠脊面编号辨认。要启用得先给 body 分好材质槽。 */
+payload.useGlb = false;
+
 const shell = await readFile(join(here, 'shell.html'), 'utf8');
 const html = shell
   .replace('/*__DATA__*/null', () => JSON.stringify(payload))
