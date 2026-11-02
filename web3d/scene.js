@@ -139,18 +139,20 @@ function makeNoTexture(n) {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   let y = 32;
-  g.fillStyle = '#8f8a80';
-  g.font = '600 12px "Helvetica Neue", Arial, sans-serif';
+  /* 脊面只有 0.17 宽，架子上也就 20 来个像素，字号必须顶到边才认得出。
+     数字用 38px（几乎等于画布宽度），WEEK 压到 11px 当注脚。 */
+  g.fillStyle = '#a8a294';
+  g.font = '600 11px "Helvetica Neue", Arial, sans-serif';
   for (const c of 'WEEK') {
     g.fillText(c, cw / 2, y);
-    y += 15;
+    y += 13;
   }
-  y += 6;
+  y += 10;
   g.fillStyle = '#151713';
-  g.font = '300 25px "Helvetica Neue", Arial, sans-serif';
+  g.font = '300 38px "Helvetica Neue", Arial, sans-serif';
   for (const c of String(n).padStart(2, '0')) {
     g.fillText(c, cw / 2, y);
-    y += 29;
+    y += 40;
   }
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -580,17 +582,6 @@ for (let c = 0; c < RAIL_N; c++) {
         const sheet = new THREE.Mesh(PARTS.archive_face, m.print);
         body.add(sheet);
       }
-      /* 周次标签贴在板面上边缘靠脊那一端：
-         顶面在架子上几乎是平的（俯角只有 7°），贴上去就被压成一条线；
-         上边缘这条带子正对和架子上都能看到。 */
-      const tag = new THREE.Mesh(
-        new THREE.BoxGeometry(0.002, H * 0.075, T * 0.30),
-        new THREE.MeshBasicMaterial({ map: weekTag(w) })
-      );
-      tag.position.set(-W / 2 - 0.001, H / 2 - H * 0.055, T / 2 - T * 0.20);
-      body.add(tag);
-      rail.tag = tag;
-
       if (PARTS.archive_clip) {
         const clip = new THREE.Mesh(PARTS.archive_clip, m.top);
         body.add(clip);
@@ -1149,8 +1140,10 @@ function placeCallout() {
 
   /* 标注位置是**设计死的**，不跟着脊跑（照 RhineLabUI 的 .archive-callout 定坐标）。 */
   const wide = innerWidth >= 760;
-  const bx = wide ? Math.round(innerWidth * 0.40) : 24;
-  const by = wide ? Math.round(innerHeight * 0.20) : 96;
+  /* 模型现在占满画面中间，标注放 40% / 20% 正好压在板上。
+     挪到右侧那条空白带，只留一个小圆点贴在脊顶。 */
+  const bx = wide ? Math.round(innerWidth * 0.775) : 24;
+  const by = wide ? Math.round(innerHeight * 0.40) : 96;
   box.style.setProperty('--bx', bx + 'px');
   box.style.setProperty('--by', by + 'px');
   box.style.setProperty('--dx2', px.toFixed(1) + 'px');
@@ -1160,12 +1153,9 @@ function placeCallout() {
   if (line) {
     const ly = Math.max(py, by + 110);          // 别穿过文字块
     const lw = Math.max(180, innerWidth * 0.42);
-    line.style.left = px.toFixed(1) + 'px';
-    line.style.top = ly.toFixed(1) + 'px';
-    line.style.width = lw.toFixed(0) + 'px';
-    line.style.transform = 'none';
+    line.style.width = '0px';
     box.style.setProperty('--dy2', ly.toFixed(1) + 'px');
-    box.style.setProperty('--actTop', (ly - by + 13).toFixed(0) + 'px');
+    box.style.setProperty('--actTop', '108px');   // 动作条固定在方块下面，别跑去模型顶上
   }
   box.style.opacity = '1';
 }
