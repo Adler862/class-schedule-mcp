@@ -1306,11 +1306,14 @@ function tick(now) {
 
   /* 镜头绕过去看：位置走球面弧线，注视点在圆心上再往右挪一点，
      这样档案落在画面左半边，右边留给课表。 */
-  /* 竖屏把镜头拉远一点：fov 定的是竖直视野，手机横向太窄，
-     板宽 1.486 会直接出画。只动距离，不碰 fov 和雾。
-     雾的 near 跟着 camDist 走，所以拉远后仍然只是轻微雾化。 */
-  const portrait = innerHeight > innerWidth * 1.05;
-  const toR = CAM_TO.radius * (portrait ? 1.55 : 1);
+  /* 按画面比例算"刚好装得下板宽"的距离。
+     fov 定的是竖直视野，横向可见宽度 = 2·R·tan(fov/2)·aspect，
+     竖屏 aspect 只有 0.46，1.55 倍远远不够（视野宽才 1.24，板宽 1.486）。
+     这里直接解出 R，横屏时算出来比 11.8 小，取 max 后桌面行为不变。 */
+  const aspect = Math.max(0.28, innerWidth / innerHeight);
+  const tanHalf = Math.tan((camera.fov * Math.PI / 180) / 2);
+  const fitR = 1.66 / (2 * tanHalf * aspect);        // 1.486 的板 + 一点留白
+  const toR = Math.min(26, Math.max(CAM_TO.radius, fitR));
 
   const sph = new THREE.Spherical(
     CAM_FROM.radius + (toR - CAM_FROM.radius) * ck,
@@ -1326,7 +1329,7 @@ function tick(now) {
   const fogK = Math.pow(ck, 0.4);
   const camDist = camera.position.distanceTo(CAM_PIVOT);
   scene.fog.near = camDist + (1 - fogK) * 900 - fogK * 1.0;
-  scene.fog.far = camDist + (1 - fogK) * 1800 + fogK * 5.5;
+  scene.fog.far = camDist + (1 - fogK) * 1800 + fogK * 8;
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
