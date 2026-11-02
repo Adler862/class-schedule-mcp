@@ -191,6 +191,23 @@ function parseGLB(b64) {
     return out;
   };
 
+  /* 先收一遍节点变换：glTF 允许把位移/旋转放在 node 上而不是烘进顶点 */
+  const nodeXf = {};
+  for (const n of json.nodes || []) {
+    if (n.mesh === undefined || !json.meshes[n.mesh]) continue;
+    const m = new THREE.Matrix4();
+    if (n.matrix) {
+      m.fromArray(n.matrix);
+    } else {
+      m.compose(
+        new THREE.Vector3().fromArray(n.translation || [0, 0, 0]),
+        new THREE.Quaternion().fromArray(n.rotation || [0, 0, 0, 1]),
+        new THREE.Vector3().fromArray(n.scale || [1, 1, 1])
+      );
+    }
+    nodeXf[json.meshes[n.mesh].name] = m;
+  }
+
   const geos = {};
   for (const mesh of json.meshes || []) {
     /* 一个 mesh 可能有多个 primitive（每个对应一个材质槽）。
@@ -216,9 +233,37 @@ function parseGLB(b64) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     if (nor.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-    if (uvs.length) g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    if (uvs.length) {
+      /* cube_project 给的 UV 是按立方体尺寸走的，范围不是 0–1，
+         课表只盖住板的一角。这里按包围盒拉回 0–1 正好铺满。
+         只对那层纸做——body 有两个材质槽，全局归一化会把编号挤扁。 */
+      if (mesh.name !== 'archive_body') {
+        /* 只按"朝 -x 的那些顶点"求包围盒——立方体六个面在 UV 空间里是分开的，
+           用全局包围盒会把正面挤到一小块里去。 */
+        let minU = 1e9, maxU = -1e9, minV = 1e9, maxV = -1e9;
+        for (let i = 0, v = 0; i < uvs.length; i += 2, v++) {
+          if (nor.length && nor[v * 3] > -0.9) continue;
+          if (uvs[i] < minU) minU = uvs[i];
+          if (uvs[i] > maxU) maxU = uvs[i];
+          if (uvs[i + 1] < minV) minV = uvs[i + 1];
+          if (uvs[i + 1] > maxV) maxV = uvs[i + 1];
+        }
+        if (minU > maxU) { minU = 0; maxU = 1; minV = 0; maxV = 1; }
+        const du = (maxU - minU) || 1;
+        const dv = (maxV - minV) || 1;
+        for (let i = 0; i < uvs.length; i += 2) {
+          uvs[i] = (uvs[i] - minU) / du;
+          uvs[i + 1] = (uvs[i + 1] - minV) / dv;
+        }
+      }
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    }
     if (idx.length) g.setIndex(idx);
     for (const gr of groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
+    /* 节点上的位移/旋转要自己套上去：face 是靠 node.translation 挪到板前面的，
+       只读顶点的话它会正好叠在本体中间。 */
+    const nx = nodeXf[mesh.name];
+    if (nx) g.applyMatrix4(nx);
     g.computeBoundingSphere();
     geos[mesh.name] = g;
   }
@@ -360,6 +405,18 @@ function makeLabelTexture(w) {
 }
 
 const labelTex = new Map();
+function labelTexture(w) {
+  if (!labelTex.has(w)) {
+    const t = makeLabelTexture(w);
+    /* Blender 的 cube_project 给 -x 面的 UV 是转 180° 再镜像的，
+       在纹理侧一次性翻正，比在 geometry 上改 UV 省事。 */
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.repeat.set(-1, -1);
+    t.offset.set(1, 1);
+    labelTex.set(w, t);
+  }
+  return labelTex.get(w);
+}
 function labelMaterial(w) {
   if (!labelTex.has(w)) labelTex.set(w, makeLabelTexture(w));
   return new THREE.MeshStandardMaterial({
@@ -420,7 +477,9 @@ function matSet(w) {
     color: new THREE.Color(`hsl(${hue} 20% ${light}%)`),
     roughness: 0.8, metalness: 0, transparent: true, opacity: busy ? 1 : 0.35
   });
-  const set = { side, face, top, cap, busy, hRatio: busy ? 1 : 0.62 };
+  /* 印刷面：课表直接贴在 GLB 那层纸的 UV 上，不再额外叠一片 plane */
+  const print = new THREE.MeshBasicMaterial({ map: labelTexture(w) });
+  const set = { side, face, top, cap, print, busy, hRatio: busy ? 1 : 0.62 };
   weekMats.set(w, set);
   return set;
 }
@@ -432,7 +491,7 @@ for (let c = 0; c < RAIL_N; c++) {
      "只把其余档案压成背景"就无从下手。 */
   const m = {
     side: base.side.clone(), face: base.face.clone(),
-    top: base.top.clone(), cap: base.cap.clone(),
+    top: base.top.clone(), cap: base.cap.clone(), print: base.print.clone(),
     busy: base.busy, hRatio: base.hRatio,
   };
   /* 同一周在轨道上会出现三次，高度给一点确定性微差，
@@ -456,7 +515,7 @@ for (let c = 0; c < RAIL_N; c++) {
     if (r === 0 && PARTS && PARTS.archive_body) {
       body = new THREE.Mesh(PARTS.archive_body, [m.side, m.face]);
       if (PARTS.archive_face) {
-        const sheet = new THREE.Mesh(PARTS.archive_face, m.top);
+        const sheet = new THREE.Mesh(PARTS.archive_face, m.print);
         body.add(sheet);
       }
       if (PARTS.archive_clip) {

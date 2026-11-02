@@ -20,13 +20,16 @@ def box(name, sx, sy, sz, loc, bevel=0.006, seg=2):
     o = bpy.context.object
     o.name = name
     o.data.name = name      # 导出的 mesh 名要跟着走，否则解析时拿不到
-    o.scale = (sx / 2, sy / 2, sz / 2)
+    o.scale = (sx, sy, sz)      # size=1 的 cube 已经是 1 单位边长，不是半径
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     # 先给 UV：一块板只要把六个面各自铺满 0–1 就够了，
     # 正面拿到的就是"整张课表贴满这一面"
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.uv.cube_project(cube_size=1.0)
+    # cube_project 给的 UV 范围不是 0-1（按立方体尺寸走），
+    # pack 一下让每个面各自铺满 0-1，贴图才能正好盖住一整面
+    bpy.ops.uv.pack_islands(rotate=False, margin=0.0)
     bpy.ops.object.mode_set(mode='OBJECT')
 
     if bevel:
