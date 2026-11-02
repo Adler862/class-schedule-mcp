@@ -1120,7 +1120,7 @@ function drawOut(node, done){
   g.innerHTML = '<div class="dr-kicker">档案 / FILE<span class="dr-no">W'
     + pn(c.week) + '·D' + pn(c.toDay || 1) + '·P' + pn(c.period) + '</span></div>'
     + '<div class="dr-name">' + c.name + '</div>'
-    + '<div class="dr-meta">' + (c.teacher || '') + '　' + (c.room || c.location || '') + '</div>';
+    + '<div class="dr-meta">' + (c.teacher || '') + '　' + (c.location || c.room || '') + '</div>';
 
   var dx = (first.left + first.width / 2) - cx;
   var dy = (first.top + first.height / 2) - cy;
