@@ -69,7 +69,7 @@ try {
    file:// 下没法 fetch，单文件发布也不能多带一个 .glb。 */
 let glbB64 = '';
 try {
-  const glb = await readFile(join(here, '..', 'art', 'archive-board.glb'));
+  const glb = await readFile(join(here, '..', 'art', 'archive-board-v2.glb'));
   glbB64 = glb.toString('base64');
 } catch { /* 没有 GLB 就退回程序化的盒子 */ }
 payload.glb = glbB64;
