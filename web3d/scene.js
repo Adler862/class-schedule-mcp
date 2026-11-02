@@ -20,7 +20,7 @@ const EX = {
   /* 朝镜头方向带出来一段。不脱离那一排的话，主体和邻居在同一深度上，
      雾没法只吃掉背景，近处那几根会直接盖在主体前面。 */
   out: 10,
-  tilt: 0.18,       // 稍微偏一点，露出厚度
+  tilt: -0.02,      // 几乎正对；之前 0.18 让板子明显朝左歪
 };
 
 if (/[?&]still=1/.test(location.search)) document.body.classList.add('still');
@@ -49,7 +49,7 @@ camera.lookAt(0.35, 0.95, -1.2);
    圆心放在抽出的档案身上，半径/仰角/方位角各走一条。 */
 const CAM_PIVOT = new THREE.Vector3(-1.55, 1.35, 0);
 const CAM_FROM = new THREE.Spherical(31.06, 1.440, -0.474);   // 初始机位反算
-const CAM_TO = new THREE.Spherical(20.0, 1.470, -1.404);      // 侧面、接近平视
+const CAM_TO = new THREE.Spherical(17.5, 1.470, -1.492);      // 侧面、接近平视
 const camLookAt = new THREE.Vector3();
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d4cb, 2.1));
@@ -191,12 +191,9 @@ function makeLabelTexture(w) {
   g.fillStyle = '#151713';
   g.font = '600 34px ' + SANS;
   g.fillText('NO.' + pad2(w), 16, 40);
-  g.fillStyle = '#9a9487';
-  g.font = '500 16px ' + SANS;
-  const list = weekCourses(w);
-  const secs = list.reduce((n, c) => n + (c.endPeriod - c.startPeriod + 1), 0);
-  g.fillText('WEEK ' + pad2(w) + ' · ' + new Set(list.map(c => c.name)).size
-    + ' 门 · ' + secs + ' 节', 16, 70);
+  g.fillStyle = '#a8a294';
+  g.font = '500 15px ' + SANS;
+  g.fillText('WEEK ' + pad2(w), 16, 70);
 
   /* 表头：七天 */
   for (let d = 1; d <= 7; d++) {
@@ -205,9 +202,9 @@ function makeLabelTexture(w) {
     g.fillStyle = '#151713';
     g.font = '500 24px ' + SANS;
     g.fillText(DAY_NAMES[d], x + 12, 40);
-    g.fillStyle = '#a8a294';
-    g.font = '400 17px ' + SANS;
-    g.fillText(pad2(dt.getMonth() + 1) + '/' + pad2(dt.getDate()), x + 12, 70);
+    g.fillStyle = '#8b8578';
+    g.font = '400 16px ' + SANS;
+    g.fillText(pad2(dt.getMonth() + 1) + '/' + pad2(dt.getDate()), x + 12, 72);
   }
 
   /* 节次列 */
@@ -224,6 +221,7 @@ function makeLabelTexture(w) {
   }
 
   /* 课程块 */
+  const list = weekCourses(w);
   for (const c of list) {
     const r1 = Math.ceil(c.startPeriod / 2);
     const r2 = Math.ceil(c.endPeriod / 2);
@@ -238,14 +236,26 @@ function makeLabelTexture(w) {
     g.fillStyle = colorOf(c.name);
     g.fillRect(x + 3, y + 3, 6, hh - 6);
 
+    /* 三行：课名（深、重）/ 地点（灰）/ 老师（更淡），和参考图一致 */
     const name = c.name.length > 6 ? c.name.slice(0, 6) : c.name;
-    g.fillStyle = '#2b2c25';
-    g.font = '500 ' + (name.length > 4 ? 19 : 22) + 'px ' + SANS;
-    g.fillText(name, x + 16, y + 30);
-    g.fillStyle = '#9a9487';
-    g.font = '400 14px ' + SANS;
-    const room = (c.room || c.location || '');
-    g.fillText(room.length > 9 ? room.slice(-6) : room, x + 16, y + 54);
+    g.fillStyle = '#1a1b16';
+    /* 格宽 128，左边距 14；6 个字用 17px 才不会顶到右边界 */
+    const fs = name.length >= 6 ? 17 : (name.length >= 5 ? 18 : (name.length >= 4 ? 20 : 22));
+    g.font = '600 ' + fs + 'px ' + SANS;
+    g.fillText(name, x + 14, y + 28);
+
+    /* 只去掉"东校区"这种前缀，楼名和房间号要留着——
+       只显示"208"的话，一眼看不出在哪栋楼 */
+    const room = (c.room || c.location || '').replace(/^[东南西北]校区/, '');
+    g.fillStyle = '#8b8578';
+    g.font = '400 15px ' + SANS;
+    g.fillText(room.length > 9 ? room.slice(0, 9) : room, x + 14, y + 54);
+
+    if (c.teacher) {
+      g.fillStyle = '#a8a294';
+      g.font = '400 14px ' + SANS;
+      g.fillText(c.teacher, x + 14, y + 76);
+    }
   }
 
   const tex = new THREE.CanvasTexture(cv);
@@ -1064,7 +1074,7 @@ function tick(now) {
 
   const vd = CAM_PIVOT.clone().sub(camera.position).setY(0).normalize();
   camLookAt.copy(CAM_PIVOT)
-    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 0.52 * ck);
+    .addScaledVector(new THREE.Vector3(-vd.z, 0, vd.x), 1.08 * ck);
   camera.lookAt(camLookAt);
 
   /* 底部滚动周次条：跟着轨道位置一起平移，

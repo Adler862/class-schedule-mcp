@@ -318,8 +318,9 @@
   .back .lbl{font-size:10.5px;letter-spacing:1.6px}
   .back kbd{font:inherit;font-size:9px;letter-spacing:1px;color:#8b8578;
     border:1px solid #bdb8ad;padding:3px 5px}
-  .cap{position:absolute;left:clamp(24px,3vw,44px);bottom:84px;opacity:0}
-  body.sheet-open .cap{opacity:1;transition:opacity 380ms linear 200ms}
+  /* 档案板上已经印着 NO.09 / WEEK 09，左下角再摆一份就是重复，
+     而且模型放大后正好压在它上面。详情态直接收起来。 */
+  .cap{display:none}
   .cap b{display:block;font-size:34px;font-weight:300;letter-spacing:-.6px;line-height:1;
     font-variant-numeric:tabular-nums}
   .cap span{display:block;font-size:9.5px;letter-spacing:1.9px;color:#76736a;margin-top:9px}

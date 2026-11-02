@@ -179,11 +179,15 @@
 
   .cell.xcell{ box-shadow:inset 0 0 0 1.5px var(--fg); }
   .course{ position:relative; z-index:1; }
+  /* hover 不能再改这三个东西：
+     border-left-width 会改变盒子尺寸（触发布局重算）、transform:scale 在
+     preserve-3d 的父层里会另起合成层、z-index 变化又让整层重排。
+     三者叠在一起，鼠标在格子上移动时就会出现花屏/残影。
+     只用描边 + 阴影 + 亮度，完全不碰几何。 */
   .course:hover{
-    transform:scale(1.035);
-    z-index:6;
-    border-left-width:4px;
     border-color:var(--line-strong);
+    box-shadow:0 4px 14px rgba(0,0,0,.18);
+    filter:brightness(1.05);
   }
   .course:hover::before{
     content:"";position:absolute;top:-1px;right:-1px;width:9px;height:9px;
@@ -391,6 +395,18 @@
   .opt:hover{border-color:var(--fg)}
   .opt.on{border-color:var(--fg);background:var(--fg);color:var(--on-ink)}
   .sheet .acts{display:flex;gap:8px;margin-top:8px}
+  /* 课页详情：教师 / 地点 / 节次 / 周次 四格 */
+  .sheet .kv{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:16px 0 6px}
+  .sheet .kv>div{border-top:1px solid var(--line);padding-top:7px;min-width:0}
+  .sheet .kv i{display:block;font-style:normal;font-size:9.5px;letter-spacing:.12em;
+    color:var(--faint);margin-bottom:4px}
+  .sheet .kv b{display:block;font-size:12px;font-weight:500;color:var(--fg);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sheet .ghostbtn{
+    flex:none;background:none;border:1px solid var(--line-strong);color:var(--muted);
+    font:inherit;font-size:11px;padding:0 14px;height:38px;cursor:pointer;
+  }
+  .sheet .ghostbtn:hover{color:var(--fg);border-color:var(--fg)}
   .sheet .acts button{
     flex:1;height:42px;border:1px solid var(--line-strong);background:transparent;
     color:var(--fg);font-size:12px;cursor:pointer;
@@ -978,6 +994,8 @@ function closeSheet(){
   dropGhost();
 }
 
+var sheetMode = 'detail';
+
 function openSheet(c, day, node){
   /* 再点同一块就关掉——不用去够右上角的 × */
   var sig = c.name + '|' + day.date + '|' + c.startPeriod;
@@ -986,6 +1004,7 @@ function openSheet(c, day, node){
     return;
   }
   _openSig = sig;
+  sheetMode = 'detail';
 
   var w = weekOfDate(parseISO(day.date));
   var exists = ovOf(c.name, day.date, c.startPeriod) || ovTargetOf(c.name, day.date, c.startPeriod);
@@ -1073,6 +1092,49 @@ function dropGhost(){
   if (_ghost){ _ghost.remove(); _ghost = null; }
 }
 
+/* 点课程先看到的是"这一节课"本身：叫什么、谁上、在哪、第几周。
+   调课是它下面的一个动作，不是点开就等于要改。 */
+function renderDetail(){
+  var pn = function(n){ return (n < 10 ? '0' : '') + n; };
+  var d = parseISO(edit.date);
+  var day = d.getDay() || 7;
+  var t0 = DATA.periodTimes[String(edit.period)] || '';
+  var t1 = DATA.periodEnd[String(edit.period + edit.span - 1)] || '';
+  var same = (DATA.courses || []).filter(function(x){ return x.name === edit.name; });
+  var weeks = same.length ? same[0].weeks : [];
+  var nWeeks = weeks.length;
+
+  var h = '<button class="sheet-x" data-k="close" aria-label="关闭">'
+        + '<svg viewBox="0 0 14 14" aria-hidden="true">'
+        + '<path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg></button>';
+  h += '<div class="kicker">课页 / SECTION'
+        + '<span class="file-no">W' + pn(edit.week) + '·D' + pn(day)
+        + '·P' + pn(edit.period) + '</span></div>';
+  h += '<h3>' + edit.name + '</h3>';
+  h += '<div class="sub">第 ' + edit.week + ' 周 ' + DAY_NAMES[day]
+        + ' · ' + (t0 ? t0 + '–' + t1 : '') + '</div>';
+
+  h += '<div class="kv">'
+        + '<div><i>教师</i><b>' + (edit.teacher || '—') + '</b></div>'
+        + '<div><i>地点</i><b>' + (edit.location || edit.room || '—') + '</b></div>'
+        + '<div><i>节次</i><b>第 ' + edit.period + '–' + (edit.period + edit.span - 1) + ' 节</b></div>'
+        + '<div><i>周次</i><b>' + (nWeeks ? nWeeks + ' 周有课' : '—') + '</b></div>'
+        + '</div>';
+
+  if (edit.exists){
+    var toW = weekOfDate(parseISO(edit.exists.toDate));
+    h += '<div class="sub" style="margin:10px 0 14px">这一节已调整到：第 ' + toW + ' 周 '
+      + DAY_NAMES[parseISO(edit.exists.toDate).getDay() || 7] + ' 第 ' + edit.exists.toPeriod + ' 节</div>';
+  }
+
+  h += '<div class="acts">';
+  h += '<button class="ghostbtn" data-k="close">关闭</button>';
+  h += '<button class="primary" data-k="tomove">调整这次课 →</button>';
+  h += '</div>';
+
+  sheetEl.innerHTML = h;
+}
+
 function renderSheet(){
   var tw = edit.week + edit.weekOffset;
   var toDate = dateOfWeekDay(tw, edit.toDay);
@@ -1081,10 +1143,11 @@ function renderSheet(){
   var noop = isoOf(toDate) === edit.date && edit.toPeriod === edit.period;
 
   var pn = function(n){ return (n < 10 ? '0' : '') + n; };
+  if (sheetMode !== 'move'){ renderDetail(); return; }
   var h = '<button class="sheet-x" data-k="close" aria-label="关闭">'
         + '<svg viewBox="0 0 14 14" aria-hidden="true">'
         + '<path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg></button>';
-  h += '<div class="kicker">档案 / FILE'
+  h += '<div class="kicker">调整 / MOVE'
         + '<span class="file-no">W' + pn(edit.week) + '·D' + pn(edit.toDay || 1)
         + '·P' + pn(edit.period) + '</span></div>';
   h += '<h3>' + edit.name + '</h3>';
@@ -1122,6 +1185,7 @@ function renderSheet(){
        (noop ? '　·　与原时间相同' : '') + '</div>';
 
   h += '<div class="acts">';
+  h += '<button class="ghostbtn" data-k="back">← 返回</button>';
   if (edit.exists){
     h += '<button class="danger" data-k="undo">撤销调课</button>';
   } else {
@@ -1153,6 +1217,8 @@ sheetEl.onclick = function(e){
   else if (k === 'day'){ edit.toDay = +v; renderSheet(); }
   else if (k === 'p'){ edit.toPeriod = +v; renderSheet(); }
   else if (k === 'close'){ closeSheet(); }
+  else if (k === 'tomove'){ sheetMode = 'move'; renderSheet(); }
+  else if (k === 'back'){ sheetMode = 'detail'; renderSheet(); }
   else if (k === 'undo'){
     var o = edit.exists;
     if (!o){ closeSheet(); return; }
