@@ -134,294 +134,24 @@ function makeNoTexture(n) {
   const g = cv.getContext('2d');
   g.fillStyle = '#f7f5f0';
   g.fillRect(0, 0, cw, ch);
-  const text = 'NO.' + String(n).padStart(2, '0');
-  const chars = text.split('');
-  /* 编号只占脊面上方一小段（参考图里约 1/8 脊高），不是铺满整根。 */
-  const step = 8;
-  const top = 40;
-  g.font = '500 7.5px "Helvetica Neue", Arial, sans-serif';
+  /* 脊面是架子上唯一露出来的一条窄面，周次就印在这里。
+     之前用 7.5px 竖排 NO.xx、只占顶部 1/8，等于看不见。 */
   g.textAlign = 'center';
   g.textBaseline = 'middle';
+  let y = 30;
   g.fillStyle = '#8f8a80';
-  chars.forEach((c, i) => g.fillText(c, cw / 2, top + step * i));
-  const tex = new THREE.CanvasTexture(cv);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
-
-/* ---------- 极简 GLB 解析 ----------
-   Blender 导出的档案板只有几何：3 个 node，每个一个 primitive。
-   为了不把 GLTFLoader（约 60KB）拉进单文件，这里只读 POSITION / NORMAL /
-   TEXCOORD_0 / indices —— 够用了。 */
-function parseGLB(b64) {
-  const bin = atob(b64);
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  const dv = new DataView(buf.buffer);
-  if (dv.getUint32(0, true) !== 0x46546c67) return null;   // 'glTF'
-
-  let off = 12;
-  let json = null;
-  let binChunk = null;
-  while (off < dv.byteLength) {
-    const len = dv.getUint32(off, true);
-    const type = dv.getUint32(off + 4, true);
-    const start = off + 8;
-    if (type === 0x4e4f534a) {
-      json = JSON.parse(new TextDecoder().decode(buf.subarray(start, start + len)));
-    } else if (type === 0x004e4942) {
-      binChunk = buf.subarray(start, start + len);
-    }
-    off = start + len + ((4 - (len % 4)) % 4);
+  g.font = '600 12px "Helvetica Neue", Arial, sans-serif';
+  for (const c of 'WEEK') {
+    g.fillText(c, cw / 2, y);
+    y += 15;
   }
-  if (!json || !binChunk) return null;
-
-  const readAcc = (idx) => {
-    const acc = json.accessors[idx];
-    const bv = json.bufferViews[acc.bufferView];
-    const comp = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array,
-                   5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array }[acc.componentType];
-    const n = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[acc.type];
-    const base = (bv.byteOffset || 0) + (acc.byteOffset || 0);
-    const out = new comp(acc.count * n);
-    // 直接按字节拷贝，避免对齐问题
-    const src = new Uint8Array(binChunk.buffer, binChunk.byteOffset + base, acc.count * n * comp.BYTES_PER_ELEMENT);
-    new Uint8Array(out.buffer).set(src);
-    return out;
-  };
-
-  /* 先收一遍节点变换：glTF 允许把位移/旋转放在 node 上而不是烘进顶点 */
-  const nodeXf = {};
-  for (const n of json.nodes || []) {
-    if (n.mesh === undefined || !json.meshes[n.mesh]) continue;
-    const m = new THREE.Matrix4();
-    if (n.matrix) {
-      m.fromArray(n.matrix);
-    } else {
-      m.compose(
-        new THREE.Vector3().fromArray(n.translation || [0, 0, 0]),
-        new THREE.Quaternion().fromArray(n.rotation || [0, 0, 0, 1]),
-        new THREE.Vector3().fromArray(n.scale || [1, 1, 1])
-      );
-    }
-    nodeXf[json.meshes[n.mesh].name] = m;
-  }
-
-  const geos = {};
-  for (const mesh of json.meshes || []) {
-    /* 一个 mesh 可能有多个 primitive（每个对应一个材质槽）。
-       拼成一个 geometry，用 groups 记住每段属于哪个材质槽。 */
-    const pos = [], nor = [], uvs = [], idx = [];
-    const groups = [];
-    let vBase = 0, iBase = 0;
-    mesh.primitives.forEach((pr, pi) => {
-      const P = readAcc(pr.attributes.POSITION);
-      const N = pr.attributes.NORMAL !== undefined ? readAcc(pr.attributes.NORMAL) : null;
-      const U = pr.attributes.TEXCOORD_0 !== undefined ? readAcc(pr.attributes.TEXCOORD_0) : null;
-      const I = pr.indices !== undefined ? readAcc(pr.indices) : null;
-      const vCount = P.length / 3;
-      for (let i = 0; i < P.length; i++) pos.push(P[i]);
-      if (N) for (let i = 0; i < N.length; i++) nor.push(N[i]);
-      if (U) for (let i = 0; i < U.length; i++) uvs.push(U[i]);
-      if (I) for (let i = 0; i < I.length; i++) idx.push(I[i] + vBase);
-      const iCount = I ? I.length : vCount;
-      groups.push({ start: iBase, count: iCount, materialIndex: pi });
-      vBase += vCount;
-      iBase += iCount;
-    });
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    if (nor.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-    if (uvs.length && mesh.name === 'archive_body') {
-      /* body 有两个材质槽（侧面 / 脊面），各自是一块独立的 UV。
-         两个都要分别铺满 0-1，否则脊面上那排 NO.xx 会被拉伸成一片糊。 */
-      const idxArr = idx.length ? idx : null;
-      for (const gr of groups) {
-        const verts = new Set();
-        for (let k = gr.start; k < gr.start + gr.count; k++) {
-          verts.add(idxArr ? idxArr[k] : k);
-        }
-        let mnU = 1e9, mxU = -1e9, mnV = 1e9, mxV = -1e9;
-        for (const v of verts) {
-          const u = uvs[v * 2], vv = uvs[v * 2 + 1];
-          if (u < mnU) mnU = u;
-          if (u > mxU) mxU = u;
-          if (vv < mnV) mnV = vv;
-          if (vv > mxV) mxV = vv;
-        }
-        const du = (mxU - mnU) || 1, dv = (mxV - mnV) || 1;
-        for (const v of verts) {
-          uvs[v * 2] = (uvs[v * 2] - mnU) / du;
-          uvs[v * 2 + 1] = (uvs[v * 2 + 1] - mnV) / dv;
-        }
-      }
-    }
-    if (uvs.length) {
-      /* cube_project 给的 UV 是按立方体尺寸走的，范围不是 0–1，
-         课表只盖住板的一角。这里按包围盒拉回 0–1 正好铺满。
-         只对那层纸做——body 有两个材质槽，全局归一化会把编号挤扁。 */
-      if (mesh.name !== 'archive_body') {
-        /* 只按"朝 -x 的那些顶点"求包围盒——立方体六个面在 UV 空间里是分开的，
-           用全局包围盒会把正面挤到一小块里去。 */
-        let minU = 1e9, maxU = -1e9, minV = 1e9, maxV = -1e9;
-        for (let i = 0, v = 0; i < uvs.length; i += 2, v++) {
-          if (nor.length && nor[v * 3] > -0.9) continue;
-          if (uvs[i] < minU) minU = uvs[i];
-          if (uvs[i] > maxU) maxU = uvs[i];
-          if (uvs[i + 1] < minV) minV = uvs[i + 1];
-          if (uvs[i + 1] > maxV) maxV = uvs[i + 1];
-        }
-        if (minU > maxU) { minU = 0; maxU = 1; minV = 0; maxV = 1; }
-        const du = (maxU - minU) || 1;
-        const dv = (maxV - minV) || 1;
-        for (let i = 0; i < uvs.length; i += 2) {
-          uvs[i] = (uvs[i] - minU) / du;
-          uvs[i + 1] = (uvs[i + 1] - minV) / dv;
-        }
-      }
-      g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    }
-    if (idx.length) g.setIndex(idx);
-    /* 节点上的位移/旋转要自己套上去：face 是靠 node.translation 挪到板前面的，
-       只读顶点的话它会正好叠在本体中间。 */
-    const nx = nodeXf[mesh.name];
-    if (nx) g.applyMatrix4(nx);
-    for (const gr of groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
-    g.computeBoundingSphere();
-    geos[mesh.name] = g;
-  }
-  return geos;
-}
-
-const PARTS = (DATA.glb && DATA.useGlb) ? parseGLB(DATA.glb) : null;
-
-const bodyGeo = new THREE.BoxGeometry(W, H, T);
-const capGeo = new THREE.BoxGeometry(W * 0.82, 0.022, T * 0.82);
-const labelGeo = new THREE.PlaneGeometry(T, H);
-
-/* 长侧面的标签：档案正对观者时才看得见。
-   没有它，抽出来的就是一块空白板——脊上那点 NO.xx 是印在窄端的，
-   一转身就背过去了。 */
-function makeLabelTexture(w) {
-  /* 这块面上印的就是**这一周的课表本身**：8 列（节次 + 七天）、7 行（表头 + 六节），
-     和模型 8:7 的长宽比一一对应，所以格子是方的，不会被拉扁。
-     远看是一块印满字的面，抽到眼前才读得清。 */
-  const cw = 1024, ch = 896;
-  const HEAD = 96;
-  const colW = cw / 8;
-  const rowH = (ch - HEAD) / 6;
-  const cv = document.createElement('canvas');
-  cv.width = cw; cv.height = ch;
-  const g = cv.getContext('2d');
-  const SANS = '"Helvetica Neue", Arial, sans-serif';
-
-  g.fillStyle = '#f8f6f1';
-  g.fillRect(0, 0, cw, ch);
-
-  /* 网格 */
-  g.strokeStyle = '#d8d2c5';
-  g.lineWidth = 2;
-  for (let c = 0; c <= 8; c++) {
-    g.beginPath(); g.moveTo(c * colW, 0); g.lineTo(c * colW, ch); g.stroke();
-  }
-  for (let r = 0; r <= 6; r++) {
-    const y = HEAD + r * rowH;
-    g.beginPath(); g.moveTo(0, y); g.lineTo(cw, y); g.stroke();
-  }
-
-  /* 四角 L 形角标 + 极细外框：让人一眼看出这是"一张有版心的档案"，
-     而不是一块随手贴上去的图。参考图里也是这个做法。 */
-  g.strokeStyle = '#c9c3b6';
-  g.lineWidth = 2;
-  g.strokeRect(1, 1, cw - 2, ch - 2);
-  g.strokeStyle = '#151713';
-  g.lineWidth = 4;
-  const corner = 46;
-  [[0, 0, 1, 1], [cw, 0, -1, 1], [0, ch, 1, -1], [cw, ch, -1, -1]]
-    .forEach(([x, y, dx, dy]) => {
-      g.beginPath();
-      g.moveTo(x + dx * corner, y);
-      g.lineTo(x, y);
-      g.lineTo(x, y + dy * corner);
-      g.stroke();
-    });
-
-  g.textBaseline = 'middle';
-  g.textAlign = 'left';
-
-  /* 表头左上：档案号 */
+  y += 4;
   g.fillStyle = '#151713';
-  g.font = '600 34px ' + SANS;
-  g.fillText('NO.' + pad2(w), 16, 40);
-  g.fillStyle = '#a8a294';
-  g.font = '500 15px ' + SANS;
-  g.fillText('WEEK ' + pad2(w), 16, 70);
-
-  /* 表头：七天 */
-  for (let d = 1; d <= 7; d++) {
-    const x = d * colW;
-    const dt = isoOf(w, d);
-    g.fillStyle = '#151713';
-    g.font = '500 24px ' + SANS;
-    g.fillText(DAY_NAMES[d], x + 12, 40);
-    g.fillStyle = '#8b8578';
-    g.font = '400 16px ' + SANS;
-    g.fillText(pad2(dt.getMonth() + 1) + '/' + pad2(dt.getDate()), x + 12, 72);
+  g.font = '300 25px "Helvetica Neue", Arial, sans-serif';
+  for (const c of String(n).padStart(2, '0')) {
+    g.fillText(c, cw / 2, y);
+    y += 29;
   }
-
-  /* 节次列 */
-  for (let r = 0; r < 6; r++) {
-    const y = HEAD + r * rowH;
-    const sp = r * 2 + 1;
-    g.fillStyle = '#151713';
-    g.font = '500 20px ' + SANS;
-    g.fillText(sp + '-' + (sp + 1), 12, y + 34);
-    const t0 = (DATA.periodTimes && DATA.periodTimes[sp]) || '';
-    g.fillStyle = '#a8a294';
-    g.font = '400 15px ' + SANS;
-    g.fillText(t0, 12, y + 62);
-  }
-
-  /* 课程块 */
-  const list = weekCourses(w);
-  for (const c of list) {
-    const r1 = Math.ceil(c.startPeriod / 2);
-    const r2 = Math.ceil(c.endPeriod / 2);
-    if (r1 < 1 || r1 > 6) continue;
-    const span = Math.max(1, Math.min(r2 - r1 + 1, 7 - r1));
-    const x = c.day * colW;
-    const y = HEAD + (r1 - 1) * rowH;
-    const hh = span * rowH;
-
-    g.fillStyle = '#ffffff';
-    g.fillRect(x + 3, y + 3, colW - 6, hh - 6);
-    g.fillStyle = colorOf(c.name);
-    g.fillRect(x + 3, y + 3, 6, hh - 6);
-
-    /* 三行：课名（深、重）/ 地点（灰）/ 老师（更淡），和参考图一致 */
-    const name = c.name.length > 7 ? c.name.slice(0, 7) : c.name;
-    g.fillStyle = '#1a1b16';
-    /* 格宽 128、左边距 14，可用 114；按字数挑字号，宁小不裁 */
-    const fs = name.length >= 7 ? 15 : (name.length >= 6 ? 16.5
-      : (name.length >= 5 ? 18 : (name.length >= 4 ? 20 : 22)));
-    g.font = '600 ' + fs + 'px ' + SANS;
-    g.fillText(name, x + 12, y + 28);
-
-    /* 只去掉"东校区"这种前缀，楼名和房间号要留着——
-       只显示"208"的话，一眼看不出在哪栋楼 */
-    const room = (c.room || c.location || '').replace(/^[东南西北]校区/, '');
-    g.fillStyle = '#8b8578';
-    g.font = '400 15px ' + SANS;
-    g.fillText(room.length > 9 ? room.slice(0, 9) : room, x + 12, y + 54);
-
-    if (c.teacher) {
-      g.fillStyle = '#a8a294';
-      g.font = '400 14px ' + SANS;
-      g.fillText(c.teacher, x + 12, y + 76);
-    }
-  }
-
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -449,6 +179,10 @@ function weekTagTexture(w) {
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
+  /* 贴到朝 -x 的平面上时，u 轴正好是反的，文字会镜像 */
+  t.wrapS = THREE.RepeatWrapping;
+  t.repeat.x = -1;
+  t.offset.x = 1;
   return t;
 }
 const weekTagTex = new Map();
@@ -575,11 +309,17 @@ for (let c = 0; c < RAIL_N; c++) {
       /* 周次标签贴在板面上边缘靠脊那一端：
          顶面在架子上几乎是平的（俯角只有 7°），贴上去就被压成一条线；
          上边缘这条带子正对和架子上都能看到。 */
+      /* 用 Plane 不用薄 Box：Box 的 -x 面 u 沿 y、v 沿 z，
+         横排的字会被拆成一格一格的碎块（就是之前看到的 W E E K）。 */
       const tag = new THREE.Mesh(
-        new THREE.BoxGeometry(0.002, H * 0.075, T * 0.30),
-        new THREE.MeshBasicMaterial({ map: weekTag(w) })
+        new THREE.PlaneGeometry(T * 0.30, H * 0.075),
+        new THREE.MeshBasicMaterial({
+          map: weekTag(w), side: THREE.DoubleSide, transparent: true,
+        })
       );
-      tag.position.set(-W / 2 - 0.001, H / 2 - H * 0.055, T / 2 - T * 0.20);
+      tag.rotation.y = -Math.PI / 2;
+      /* 必须放到纸面外面：纸在 -0.0906..-0.0854，压在 -0.088 就会被盖住 */
+      tag.position.set(-W / 2 - 0.012, H / 2 - H * 0.055, T / 2 - T * 0.20);
       body.add(tag);
       rail.tag = tag;
 
@@ -1305,9 +1045,9 @@ function tick(now) {
     front.scale.setScalar(sc);
     /* 标签跟着拔出进度淡入，塞回去时一起消失 */
     if (r.mark) r.mark.visible = e2 > 0.4;
-    /* 周次标签只在架子上有用；详情态板上已经印着 NO.xx / WEEK xx，
-       而且它不吃 dim，会变成几块飘在画面里的白牌子。 */
-    if (r.tag) r.tag.visible = ck < 0.35;
+    /* 周次标签跟着 dim 一起淡：详情态主体的那块要留着（那才是"侧面周次"），
+       其余列压到几乎看不见，不会变成飘着的白牌子。 */
+    if (r.tag) r.tag.material.opacity = isFocus ? 1 : dim * 0.9;
     r.labelMat.opacity = e2;
     for (let row = 1; row < ROWS; row++) {
       const h = r.holders[row];

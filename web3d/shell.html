@@ -58,7 +58,8 @@
   .sel{position:absolute;left:26px;bottom:22px}
   .sel .tag{margin-bottom:4px}
   .sel .n{display:flex;align-items:baseline;gap:8px;line-height:1}
-  .sel .n b{font-size:52px;font-weight:300;letter-spacing:-.02em}
+  /* 负字距会把最后一个数字的右侧吃掉，overflow:hidden 一裁就少一块 */
+  .sel .n b{font-size:52px;font-weight:300;letter-spacing:0;padding-right:.02em}
   .sel .n s{text-decoration:none;font-size:13px;color:#8f8a80}
 
   /* 底部中间：周次 + 一条会跟着轨道滚动的周次带 */
