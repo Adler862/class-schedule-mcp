@@ -104,8 +104,11 @@ python tools/build_single.py --date 2026-11-02   # 把某天当作"今天"，截
 教务系统导出的「学生个人课表」xls 可以直接转成本项目的数据格式：
 
 ```bash
-# 1. 解析（--start 是学期首周周一，必须自己给，见下）
-python tools/convert_xls.py 学生个人课表.xls --start 2026-08-31 --out config/mine.json
+# 1. 解析（--start 换成你所在学期第一周的周一，必须自己给，见下）
+python tools/convert_xls.py 学生个人课表.xls --start YYYY-MM-DD --out config/mine.json
+
+#    例：2026 年秋季学期 8 月 31 日开学
+#    python tools/convert_xls.py 学生个人课表.xls --start 2026-08-31 --out config/mine.json
 
 # 2. 打包成单文件
 python tools/build_single.py --courses config/mine.json --out dist/我的课表.html
