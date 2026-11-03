@@ -99,6 +99,13 @@ def _wrap_title(text, font, max_w):
     """短课名保持一行；长课名按宽度候选折行，并优先保留课程词素。"""
     if font.getlength(text) <= max_w:
         return [text]
+    # 带括号的课名（体育（四）、大学英语（四））从括号前断开。
+    # 括号是全角符号，不算汉字，会掉进下面的兜底分支被按宽度随意切开，
+    # 切开后右括号常被单独甩到第二行，看着像掉了个字符。
+    if '（' in text or '(' in text:
+        k = text.index('（') if '（' in text else text.index('(')
+        if 0 < k < len(text) - 1:
+            return [text[:k], text[k:]]
     if not (5 <= len(text) <= 10 and all('\u4e00' <= ch <= '\u9fff' for ch in text)):
         return _wrap_cjk(text, font, max_w)
 
