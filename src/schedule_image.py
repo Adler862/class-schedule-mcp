@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-课表图片渲染器 —— 超级课程表风格的彩色格子周课表
+课表图片渲染器 —— 与网页版一致的米白细线周课表
 输出 PNG，供 MCP 工具调用。
 """
 import os, sys, datetime, hashlib
+from itertools import combinations
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'class-schedule')))
 import today_schedule as ts  # noqa: E402
@@ -14,12 +15,12 @@ from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 # ---- 布局常量 ----
 W = 860
 HEADER_H = 100         # 顶部星期/日期行
-TITLE_H = 68           # 标题行
+TITLE_H = 88           # 标题行
 LEFT_W = 76            # 左侧节次列
 ROW_H = 205            # 每个大节行高
 N_PERIODS = 6          # 6 个大节
 PAD = 18
-COL_GAP = 8
+COL_GAP = 1            # 用细线分隔，不用间隙
 
 # 地点前缀去掉哪些词（各校命名不同，逗号分隔；默认不去）
 _LOCATION_STRIP = [p.strip() for p in
@@ -28,27 +29,25 @@ _LOCATION_STRIP = [p.strip() for p in
 FONT_PATH = os.environ.get('SCHEDULE_FONT') or 'C:/Windows/Fonts/msyh.ttc'
 FONT_BOLD_PATH = os.environ.get('SCHEDULE_FONT_BOLD') or 'C:/Windows/Fonts/msyhbd.ttc'
 
-# 深色护眼主题（Tokyo Night 系）
+# 与 docs/index.html 同一套配色：米白底、近黑字、低饱和课程色
 PALETTE = [
-    (247, 118, 142),  # 红
-    (255, 158, 100),  # 橙
-    (224, 175, 104),  # 黄
-    (158, 206, 106),  # 绿
-    (115, 218, 202),  # 青
-    (122, 162, 247),  # 蓝
-    (187, 154, 247),  # 紫
-    (255, 121, 198),  # 粉
-    (125, 207, 255),  # 天蓝
-    (245, 169, 127),  # 杏
+    (122, 96, 84),    # 赭
+    (96, 110, 84),    # 苔绿
+    (84, 96, 122),    # 灰蓝
+    (122, 106, 68),   # 土黄
+    (100, 82, 100),   # 灰紫
+    (68, 100, 100),   # 青灰
+    (118, 84, 96),    # 酒红
+    (84, 100, 68),    # 橄榄
 ]
 
-BG = (24, 25, 38)            # 深夜蓝黑
-PANEL = (31, 33, 48)         # 略浅的面板
-GRID_LINE = (42, 45, 64)
-TEXT_DARK = (220, 222, 233)  # 主文字（亮）
-TEXT_GRAY = (130, 134, 156)  # 次文字
-TODAY_BG = (48, 42, 62)      # 今日列高亮底
-ACCENT = (255, 184, 108)     # 今日强调橙
+BG = (232, 229, 225)         # #e8e5e1 米白
+PANEL = (244, 242, 238)      # #f4f2ee 面板
+GRID_LINE = (205, 199, 186)  # #cdc7ba 细线
+TEXT_DARK = (21, 23, 19)     # #151713 近黑
+TEXT_GRAY = (143, 138, 128)  # #8f8a80 次要文字
+TODAY_BG = (222, 215, 200)   # #ded7c8 今日列
+ACCENT = (148, 107, 60)      # #946b3c 强调棕
 
 
 def _mix(c1, c2, t):
@@ -88,49 +87,82 @@ def _wrap_cjk(text, font, max_w):
     return lines
 
 
-def _draw_block(draw, xy, color, title, sub_lines, radius=18):
+# 只用来避免从常见课程词素中间断行，不依赖外部分词库。
+_COURSE_TERMS = (
+    '计算机', '人工智能', '大学生', '操作系统', '组成', '原理', '实验',
+    '算法', '设计', '分析', '移动', '应用', '开发', '基础', '编译',
+    '仿真', '专业', '英语', '就业', '指导',
+)
+
+
+def _wrap_title(text, font, max_w):
+    """短课名保持一行；长课名按宽度候选折行，并优先保留课程词素。"""
+    if font.getlength(text) <= max_w:
+        return [text]
+    if not (5 <= len(text) <= 10 and all('\u4e00' <= ch <= '\u9fff' for ch in text)):
+        return _wrap_cjk(text, font, max_w)
+
+    n_lines = 2 if len(text) <= 8 else 3
+    best = None
+    for cuts in combinations(range(1, len(text)), n_lines - 1):
+        bounds = (0,) + cuts + (len(text),)
+        lines = [text[a:b] for a, b in zip(bounds, bounds[1:])]
+        if any(len(line) < 2 for line in lines):
+            continue
+        widths = [font.getlength(line) for line in lines]
+        if any(width > max_w for width in widths):
+            continue
+        broken = sum(
+            any(start < cut < start + len(term) for cut in cuts)
+            for term in _COURSE_TERMS
+            for start in range(len(text) - len(term) + 1)
+            if text.startswith(term, start)
+        )
+        target = sum(widths) / n_lines
+        balance = sum((width - target) ** 2 for width in widths)
+        # 同等条件下让末行不长于首行，避免视觉重心向右下坠。
+        trailing = max(0, widths[-1] - widths[0])
+        score = (broken, balance, trailing, cuts)
+        if best is None or score < best[0]:
+            best = (score, lines)
+    return best[1] if best else _wrap_cjk(text, font, max_w)
+
+
+def _draw_block(draw, xy, color, title, sub_lines, radius=0):
+    """白底、3px 左色条；标题与说明分组后在块内居中。"""
     x0, y0, x1, y1 = xy
-    # 柔和投影
-    draw.rounded_rectangle((x0 + 2, y0 + 5, x1 + 2, y1 + 5), radius=radius, fill=(14, 15, 24))
-    fill = _mix(color, PANEL, 0.78)          # 深色底透一点课程色
-    title_c = _mix(color, (255, 255, 255), 0.30)  # 标题用同色浅调
-    sub_c = _mix(color, (226, 228, 238), 0.72)
-    draw.rounded_rectangle(xy, radius=radius, fill=fill,
-                           outline=_mix(color, BG, 0.15), width=2)
+    draw.rectangle(xy, fill=(250, 248, 244))
+    draw.rectangle((x0, y0, x0 + 2, y1), fill=color)
 
-    cx = (x0 + x1) / 2
-    max_w = x1 - x0 - 10
+    tx = x0 + 12
+    max_w = x1 - tx - 9
+    f_title = _font(21, bold=True)
+    f_sub = _font(16)
 
-    f_title = _font(22, bold=True)
-    f_sub = _font(15)
-
-    # 组装所有行（5-7 字纯中文课名按 3+2/4+3 均衡分行，避免 4+1 孤字）
-    rows = []
-    if (5 <= len(title) <= 7 and all('一' <= ch <= '鿿' for ch in title)
-            and f_title.getlength(title) > max_w):
-        mid = (len(title) + 1) // 2
-        title_lines = [title[:mid], title[mid:]]
-    else:
-        title_lines = _wrap_cjk(title, f_title, max_w)
-    for ln in title_lines:
-        rows.append((ln, f_title, 32, title_c))
-    for sub in sub_lines:
-        for ln in _wrap_cjk(sub, f_sub, max_w):
-            rows.append((ln, f_sub, 26, sub_c))
-
-    total_h = sum(h for _, _, h, _ in rows)
+    title_lines = _wrap_title(title, f_title, max_w)
+    sub_rows = [ln for sub in sub_lines for ln in _wrap_cjk(sub, f_sub, max_w)]
+    title_step, sub_step, group_gap = 28, 21, 8
+    total_h = len(title_lines) * title_step + group_gap + len(sub_rows) * sub_step
     y = y0 + ((y1 - y0) - total_h) / 2
-    for text, font, lh, color_ in rows:
-        tw = font.getlength(text)
-        draw.text((cx - tw / 2, y), text, font=font, fill=color_)
-        y += lh
+
+    for line in title_lines:
+        draw.text((tx, y), line, font=f_title, fill=TEXT_DARK, anchor='lt')
+        y += title_step
+    y += group_gap
+    for line in sub_rows:
+        draw.text((tx, y), line, font=f_sub, fill=TEXT_GRAY, anchor='lt')
+        y += sub_step
 
 
 def render_week_image(out_path=None, ref_date=None):
     """渲染当前周课表 PNG，返回文件路径"""
-    today = ref_date or datetime.date.today()
-    monday = today - datetime.timedelta(days=today.isoweekday() - 1)
-    week = ts.current_week(today)
+    # 两个日期别混用：anchor 决定画哪一周，real_today 只用来标「今天」那一列。
+    # 混成一个是 bug——看下周的图时，下周二会被错误地标成今天。
+    real_today = datetime.date.today()
+    anchor = ref_date or real_today
+    monday = anchor - datetime.timedelta(days=anchor.isoweekday() - 1)
+    week = ts.current_week(anchor)
+    today = real_today
 
     import json
     with open(ts.COURSES_JSON, 'r', encoding='utf-8') as f:
@@ -147,45 +179,46 @@ def render_week_image(out_path=None, ref_date=None):
     img = Image.new('RGB', (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    # 整体圆角面板
-    draw.rounded_rectangle((8, TITLE_H - 6, W - 8, H - 8), radius=22, fill=PANEL)
+    # 整体直角面板
+    draw.rectangle((8, TITLE_H - 6, W - 8, H - 8), fill=PANEL)
 
     col_w = (W - LEFT_W - PAD * 2 - COL_GAP * 6) / 7
 
-    # ---- 标题 ----
+    # ---- 标题（对齐 docs/index.html：左上小标签 + 左标题 + 右日期）----
+    f_kick = _font(12)
+    draw.text((PAD + 6, 14), f'档案 / WEEK  {week:02d}', font=f_kick, fill=TEXT_GRAY,
+              anchor='lt')
     f_title = _font(30, bold=True)
-    title = f'第 {week} 周课表'
-    tw = f_title.getlength(title)
-    draw.text(((W - tw) / 2, 14), title, font=f_title, fill=TEXT_DARK)
-    f_sub = _font(18)
-    sub = f"{monday.strftime('%Y-%m-%d')} ~ {(monday + datetime.timedelta(days=6)).strftime('%m-%d')}"
+    draw.text((PAD + 6, 32), f'第 {week} 周', font=f_title, fill=TEXT_DARK, anchor='lt')
+    f_sub = _font(16)
+    sub = (f"{monday.strftime('%Y-%m-%d')} ~ "
+           f"{(monday + datetime.timedelta(days=6)).strftime('%Y-%m-%d')}")
     sw = f_sub.getlength(sub)
-    draw.text(((W - sw) / 2, 48), sub, font=f_sub, fill=TEXT_GRAY)
+    draw.text((W - PAD - 6 - sw, 43), sub, font=f_sub, fill=TEXT_GRAY, anchor='lt')
 
     y0 = TITLE_H
 
     # ---- 表头 ----
-    f_day = _font(20, bold=True)
-    f_date = _font(17)
+    f_day = _font(19, bold=True)
+    f_date = _font(14)
     for i in range(7):
         day = monday + datetime.timedelta(days=i)
         x = LEFT_W + PAD + i * (col_w + COL_GAP)
         is_today = (day == today)
         if is_today:
-            draw.rounded_rectangle((x, y0 + 6, x + col_w, y0 + HEADER_H - 8),
-                                   radius=12, fill=TODAY_BG)
+            draw.rectangle((x, y0 + 8, x + col_w, y0 + HEADER_H - 8), fill=TODAY_BG)
         name = DAY_NAMES[i]
         nw = f_day.getlength(name)
-        draw.text((x + (col_w - nw) / 2, y0 + 18), name, font=f_day,
-                  fill=ACCENT if is_today else TEXT_DARK)
+        draw.text((x + (col_w - nw) / 2, y0 + 20), name, font=f_day,
+                  fill=ACCENT if is_today else TEXT_DARK, anchor='lt')
         ds = day.strftime('%m-%d')
         dw = f_date.getlength(ds)
-        draw.text((x + (col_w - dw) / 2, y0 + 50), ds, font=f_date,
-                  fill=ACCENT if is_today else TEXT_GRAY)
+        draw.text((x + (col_w - dw) / 2, y0 + 54), ds, font=f_date,
+                  fill=ACCENT if is_today else TEXT_GRAY, anchor='lt')
 
     # ---- 左侧节次列 + 网格 ----
-    f_pnum = _font(22, bold=True)
-    f_ptime = _font(14)
+    f_pnum = _font(21, bold=True)
+    f_ptime = _font(13)
     grid_top = y0 + HEADER_H
     for p in range(n_rows):
         ry = grid_top + p * ROW_H
@@ -193,13 +226,23 @@ def render_week_image(out_path=None, ref_date=None):
         # 节次号
         ns = str(p + 1)
         nw = f_pnum.getlength(ns)
-        draw.text(((LEFT_W - nw) / 2, mid - 42), ns, font=f_pnum, fill=TEXT_DARK)
+        draw.text(((LEFT_W - nw) / 2, mid - 42), ns, font=f_pnum, fill=TEXT_DARK,
+                  anchor='lt')
         # 时间
         for j, tline in enumerate(BIG_PERIOD_TIMES[p].split('\n')):
             lw_ = f_ptime.getlength(tline)
-            draw.text(((LEFT_W - lw_) / 2, mid - 8 + j * 22), tline, font=f_ptime, fill=TEXT_GRAY)
+            draw.text(((LEFT_W - lw_) / 2, mid - 6 + j * 21), tline, font=f_ptime,
+                      fill=TEXT_GRAY, anchor='lt')
         # 横线
         draw.line((LEFT_W + 4, ry, W - PAD, ry), fill=GRID_LINE, width=1)
+
+    # 竖线（列分隔），与网页版一致
+    for i in range(8):
+        vx = LEFT_W + PAD + i * (col_w + COL_GAP) - COL_GAP
+        draw.line((vx, y0, vx, grid_top + n_rows * ROW_H), fill=GRID_LINE, width=1)
+    # 表格底线
+    draw.line((LEFT_W + 4, grid_top + n_rows * ROW_H, W - PAD,
+               grid_top + n_rows * ROW_H), fill=GRID_LINE, width=1)
 
     # ---- 课程块 ----
     for c in active:
@@ -211,8 +254,8 @@ def render_week_image(out_path=None, ref_date=None):
         bp0 = (sp - 1) // 2
         bp1 = (ep - 1) // 2
         x = LEFT_W + PAD + day_idx * (col_w + COL_GAP)
-        by0 = grid_top + bp0 * ROW_H + 4
-        by1 = grid_top + (bp1 + 1) * ROW_H - 4
+        by0 = grid_top + bp0 * ROW_H + 7
+        by1 = grid_top + (bp1 + 1) * ROW_H - 7
 
         weeks = c.get('weeks') or []
         if weeks:
@@ -222,22 +265,27 @@ def render_week_image(out_path=None, ref_date=None):
         loc = c.get('location') or ''
         for _p in _LOCATION_STRIP:
             loc = loc.replace(_p, '')
+        # 「东校区云海楼208」→「云海楼208」：不缩短的话一周七列的格子放不下，
+        # 房间号会被拆成两行（云海2 / 08）
+        import re as _re
+        loc = _re.sub(r'^[\u4e00-\u9fff]{1,3}校区', '', loc)
         loc = loc.replace('楼', '')
         teacher = c.get('teacher') or ''
         subs = []
         if loc:
-            subs.append(f"@{loc}")
+            subs.append(loc)
         if teacher:
             subs.append(teacher)
-        if wr:
-            subs.append(wr)
+        # 周次不再显示：一周视图里每门课都占满大部分周，这行信息量低，
+        # 去掉后每块少一行，垂直方向宽松不少。
+
         _draw_block(draw, (x, by0, x + col_w, by1), _color_for(c['name']),
                     c['name'], [s for s in subs if s])
 
     if out_path is None:
         out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
         os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, f'week_{today.isoformat()}.png')
+        out_path = os.path.join(out_dir, f'week_{anchor.isoformat()}.png')
     img.save(out_path, 'PNG')
     return out_path
 

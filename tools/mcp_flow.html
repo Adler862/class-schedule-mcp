@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#f4f2ee;width:1080px;padding:32px 38px 30px;
+       font:14px/1.7 "Microsoft YaHei","PingFang SC",sans-serif;color:#1a1c1f}
+  h2{font-size:15px;font-weight:600;letter-spacing:.5px;margin-bottom:4px}
+  .sub{font-size:11.5px;color:#7d7a72;margin-bottom:22px;letter-spacing:.3px}
+
+  .step{display:grid;grid-template-columns:26px 1fr;gap:14px;margin-bottom:16px;position:relative}
+  .num{width:26px;height:26px;border-radius:50%;background:#252820;color:#f0eee5;
+       font-size:12px;display:flex;align-items:center;justify-content:center;
+       font-weight:600;flex:0 0 26px}
+  .card{background:#fff;border:1px solid #ded9cf;padding:13px 16px;border-radius:4px}
+  .who{font-size:10.5px;color:#8c877c;letter-spacing:1.2px;margin-bottom:6px;text-transform:uppercase}
+  .q{font-size:14.5px;color:#1a1c1f}
+  .tool{display:inline-block;font:12px "Consolas",monospace;background:#252820;color:#e8e5d9;
+        padding:2px 8px;border-radius:3px;margin-right:6px}
+  .arrow{color:#8c877c;font-size:12px;margin:0 4px}
+  .out{font:12.5px/1.75 "Cascadia Code","Consolas",monospace;background:#faf8f4;
+       border-left:2px solid #c9c3b6;padding:9px 12px;margin-top:8px;color:#2a2d31;white-space:pre-wrap}
+  .tip{margin-top:20px;padding-top:14px;border-top:1px solid #ded9cf;
+       font-size:11.5px;color:#7a766d;line-height:1.75}
+  .tip b{color:#3d3a34;font-weight:600}
+  .k{font-family:"Consolas",monospace;background:#eae6dd;padding:1px 5px;border-radius:2px;font-size:11px}
+</style>
+</head>
+<body>
+
+<h2>AI 客户端经 MCP 调用课表服务的交互链路</h2>
+<div class="sub">同一个课表服务，被支持 MCP 的智能客户端直接调用；客户端不需要知道课表结构，只需按工具名请求</div>
+
+<div class="step">
+  <div class="num">1</div>
+  <div class="card">
+    <div class="who">用户 · 在 AI 客户端里提问</div>
+    <div class="q">「明天几节课？在哪个教室？」</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">2</div>
+  <div class="card">
+    <div class="who">AI 客户端 · 选择工具</div>
+    <div><span class="tool">get_today_schedule</span><span class="arrow">→</span>次日课程与教室；如问「下一节」则选 <span class="tool">get_next_course</span></div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">3</div>
+  <div class="card">
+    <div class="who">MCP 服务 · 返回结构化结果</div>
+    <div class="out">## 📅 2026-11-04 周三 · 第 10 周
+
+**10:30–12:10** 编译原理
+　陈老师 · 📍教学楼 A208</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">4</div>
+  <div class="card">
+    <div class="who">AI 客户端 · 转述成自然语言</div>
+    <div class="q">明天只有一节：编译原理，10:30 到 12:10，在 A208。老师姓陈。</div>
+  </div>
+</div>
+
+<div class="tip">
+  <b>说明。</b>课表能力以 MCP 工具形式暴露，任何支持该协议的客户端（Claude Desktop、Cursor、Cherry Studio 等）配置服务命令后即可调用，无需为本项目单独开发界面。
+  图中第 3 步的服务返回内容为实际调用结果，第 1、4 步为自然语言的提问与转述形式示意。
+  协议层报文见附图。
+</div>
+
+</body>
+</html>

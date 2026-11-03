@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:#0f1115;color:#c9ccd3;width:1200px;
+    font:13px/1.72 "Cascadia Code","Consolas","Microsoft YaHei",monospace;
+    padding:0 0 24px;
+  }
+  .titlebar{
+    background:#1b1e24;padding:11px 18px;display:flex;align-items:center;gap:8px;
+    border-bottom:1px solid #262a32;
+  }
+  .dot{width:11px;height:11px;border-radius:50%}
+  .r{background:#e0605a}.y{background:#dfb34a}.g{background:#5fa85c}
+  .tb-title{margin-left:10px;color:#8a909c;font-size:12.5px}
+  .body{padding:20px 24px}
+  .sec{margin-bottom:20px}
+  .h{color:#5f6673;font-size:11.5px;letter-spacing:1.6px;margin-bottom:7px;text-transform:uppercase}
+  .req{color:#6fb1e8}
+  .res{color:#8fce90}
+  pre{white-space:pre-wrap;word-break:break-all;background:#15181e;border-left:2px solid #2c313b;
+      padding:10px 14px;margin-bottom:9px;border-radius:3px}
+  .dim{color:#666d7a}
+  .hl{color:#e2c07c}
+  .note{color:#596070;font-size:11.5px;margin-top:5px}
+</style>
+</head>
+<body>
+<div class="titlebar">
+  <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+  <span class="tb-title">MCP stdio 会话实录 — class-schedule v1.30.0</span>
+</div>
+<div class="body">
+
+  <div class="sec">
+    <div class="h">① 握手 · initialize</div>
+    <pre><span class="req">→</span> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05",
+     "capabilities":{},"clientInfo":{"name":"probe","version":"1.0"}}}</pre>
+    <pre><span class="res">←</span> {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"<span class="hl">2024-11-05</span>",
+     "capabilities":{"tools":{"listChanged":false},"resources":{"subscribe":false},
+     "prompts":{"listChanged":false},"experimental":{}},
+     "serverInfo":{"name":"<span class="hl">class-schedule</span>","version":"<span class="hl">1.30.0</span>"}}}</pre>
+    <div class="note">服务以 stdio 传输启动，协议版本 2024-11-05，暴露 tools 能力。</div>
+  </div>
+
+  <div class="sec">
+    <div class="h">② 调用工具 · tools/call</div>
+    <pre><span class="req">→</span> {"jsonrpc":"2.0","id":2,"method":"tools/call",
+     "params":{"name":"<span class="hl">get_today_schedule</span>","arguments":{}}}</pre>
+    <pre><span class="res">←</span> {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text",
+     "text":"## 📅 2026-11-03 周二 · 第 10 周\n\n**01-02节** 08:30–10:10 ✅\n
+     　操作系统 · 王老师 · 📍实验楼 B302\n\n🌙 明日预告：10:30 编译原理 @ 教学楼 A208（共 1 节）"}],
+     "structuredContent":{...},"isError":false}}</pre>
+    <div class="note">客户端无需知道课表结构，按工具名调用即可；返回值由服务端渲染为可读文本。</div>
+  </div>
+
+  <div class="sec">
+    <div class="h">③ 客户端渲染后</div>
+    <pre>## 📅 2026-11-03 周二 · 第 10 周
+
+**01-02节** 08:30–10:10 ✅
+　操作系统 · 王老师 · 📍实验楼 B302
+
+🌙 明日预告：10:30 编译原理 @ 教学楼 A208（共 1 节）</pre>
+  </div>
+
+  <div class="sec">
+    <div class="h">④ 工具清单 · tools/list 返回 11 项</div>
+    <pre><span class="dim">get_today_schedule</span>            今日课表（节假日感知、上课状态、下一节倒计时、明日预告）
+<span class="dim">get_next_course</span>               下一节课（含倒计时与是否正在上课）
+<span class="dim">get_week_schedule</span>             本周总览（周一至周日）
+<span class="dim">get_weather_climate</span>           近期气候趋势
+<span class="dim">get_hot_news</span>                  今日热点新闻（多源聚合）
+<span class="dim">get_morning_report</span>            每日早报（课表 + 气候 + 热点）
+<span class="dim">handle_command</span>                自然语言指令入口
+<span class="dim">get_news_prefs</span>                查看新闻偏好
+<span class="dim">set_news_prefs</span>                调整新闻偏好
+<span class="dim">get_schedule_image</span>            生成课表图片（返回 PNG）
+<span class="dim">send_schedule_image_to_wechat</span> 课表图片推送到微信</pre>
+  </div>
+
+</div>
+</body>
+</html>

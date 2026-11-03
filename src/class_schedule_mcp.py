@@ -982,7 +982,9 @@ def get_next_course() -> str:
 
 @mcp.tool()
 def get_week_schedule() -> str:
-    """获取本周课表总览（周一到周日每天的课程紧凑列表）。"""
+    """获取本周课表总览的文字列表（周一到周日每天有哪些课、第几节）。
+    仅在需要读出具体课时、或要引用文字内容时使用；
+    用户说「看看这周/下周的课」「发课表」时，应改用 get_schedule_image 出图。"""
     try:
         return build_week_schedule()
     except Exception as e:
@@ -1157,27 +1159,38 @@ def set_news_prefs(add_keywords: str = '', remove_keywords: str = '',
 
 
 @mcp.tool()
-def get_schedule_image():
-    """生成超级课程表风格的本周彩色格子课表图片（PNG 图片内容直接返回）。
-    当用户要求「课表图片」「发一张课表图」时使用。
-    ⚠️ 返回的图片就是给用户的完整回复：请直接展示/转发图片；如需说话，
-    只说一句简短自然的口语，不要汇报"已发送/已生成"。"""
+def get_schedule_image(date: str = '', week_offset: int = 0):
+    """生成一周课表的图片，作为图片内容返回、显示在 Cherry Studio 的对话窗口里。
+    仅用于桌面端就地预览（用户明确说「在电脑上看看」）。
+    用户在微信里问课表时不要用这个——那条路用户看不到图，应改用
+    send_schedule_image_to_wechat。
+    date: 目标那周里的任意日期，YYYY-MM-DD；留空则按 week_offset 算
+    week_offset: 0 本周、1 下周、-1 上周（date 为空时生效）
+    ⚠️ 返回的图片就是给用户的完整回复：直接展示图片；如需说话只说一句
+    简短口语，不要汇报"已发送/已生成"。"""
     try:
         from mcp.server.fastmcp import Image as _MCPImage
-        import schedule_image
-        return _MCPImage(path=schedule_image.render_week_image())
+        import schedule_image, datetime as _dt
+        if date:
+            ref = _dt.date.fromisoformat(date)
+        else:
+            ref = _dt.date.today() + _dt.timedelta(weeks=week_offset)
+        return _MCPImage(path=schedule_image.render_week_image(ref_date=ref))
     except Exception as e:
         return f'课表图片生成失败: {e}'
 
 
 @mcp.tool()
-def send_schedule_image_to_wechat() -> str:
-    """渲染本周课表图片并直接发送到用户的微信（通过 Cherry Studio 微信频道的 ilink 通道）。
-    成功后微信里会收到一张彩色格子课表图。
+def send_schedule_image_to_wechat(week_offset: int = 0) -> str:
+    """把课表图片直接发到用户的微信（Cherry Studio 微信频道的 ilink 通道）。
+    用户在微信里问「看看课表」「发张课表」「这周/下周上什么」时，用这个工具——
+    图片才会真正出现在微信里。只把图返回给对话窗口，用户在微信那头是看不到的。
+    week_offset: 0 本周、1 下周、-1 上周
     ⚠️ 调用成功后如需对用户说话，只使用返回值中 reply 字段的原句，不要改写、不要加长。"""
     try:
-        import schedule_image
-        png = schedule_image.render_week_image()
+        import schedule_image, datetime as _dt
+        ref = _dt.date.today() + _dt.timedelta(weeks=week_offset)
+        png = schedule_image.render_week_image(ref_date=ref)
         return _wechat_send_image(png)
     except Exception as e:
         return json.dumps({'success': False, 'error': str(e)}, ensure_ascii=False)

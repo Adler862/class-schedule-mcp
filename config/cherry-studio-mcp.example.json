@@ -1,11 +1,13 @@
 {
   "mcpServers": {
-    "class-schedule-news": {
-      "command": "python",
+    "class-schedule": {
+      "command": "D://Python//python.exe",
       "args": [
-        "<REPO_DIR>/src/class_schedule_mcp.py"
+        "D://Projects//class-schedule//src//class_schedule_mcp.py"
       ],
-      "description": "课表查询 + 多源热点新闻 + 每日早报（MCP stdio 服务）"
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      }
     }
   }
 }
