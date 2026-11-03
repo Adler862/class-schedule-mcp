@@ -1,13 +1,12 @@
 {
   "mcpServers": {
     "class-schedule": {
-      "command": "D:/Python/python.exe",
+      "command": "python",
       "args": [
-        "D:/Projects/class-schedule/src/class_schedule_mcp.py"
+        "<REPO_DIR>/src/class_schedule_mcp.py"
       ],
       "env": {
-        "PYTHONIOENCODING": "utf-8",
-        "SCHEDULE_COURSES": "D:/Projects/class-schedule/config/demo-courses.json"
+        "PYTHONIOENCODING": "utf-8"
       }
     }
   }

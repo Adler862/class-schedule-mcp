@@ -229,6 +229,14 @@ python tests/test_mcp_handshake.py
 #    注意把 <REPO_DIR> 换成本仓库的绝对路径，command 用你的 python
 ```
 
+服务默认读 `config/courses.json`。想让 MCP 与网页版用同一份演示数据，在 `env` 里加一行：
+
+```json
+"SCHEDULE_COURSES": "<REPO_DIR>/config/demo-courses.json"
+```
+
+MCP 服务启动时读这个文件，改完要重启客户端里的服务连接才生效。
+
 ![示例周课表](docs/example-week.png)
 
 ## 配置

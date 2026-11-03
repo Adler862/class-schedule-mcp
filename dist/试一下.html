@@ -1,0 +1,1426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#e8e5e1">
+<title>课表助手</title>
+<style>
+  :root{
+    color-scheme:light;
+    --bg:#e8e5e1; --surface:#efedea; --fg:#151713; --muted:#6f6c64;
+    --faint:#8f8a80; --line:#bdb8ad; --line-strong:#504b41;
+    --accent:#a67d48; --selected:#cbb397; --on-ink:#e8e5e1;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      color-scheme:dark;
+      --bg:#151713; --surface:#1d1f1a; --fg:#e8e5e1; --muted:#9a968c;
+      --faint:#77766d; --line:#3a3c34; --line-strong:#77766d;
+      --accent:#c09a63; --selected:#504b41; --on-ink:#151713;
+    }
+  }
+  *{box-sizing:border-box;border-radius:0;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  html{background:var(--bg)}
+  body{
+    max-width:1040px;min-height:100vh;margin:0 auto;
+    padding:40px 34px calc(32px + env(safe-area-inset-bottom));
+    background:var(--bg);color:var(--fg);
+    font-family:-apple-system,"MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    font-size:13px;line-height:1.6;font-variant-numeric:tabular-nums;
+  }
+  button,input{font:inherit}
+  button{transition:background-color .15s,border-color .15s,color .15s}
+  button:focus-visible,input:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+  button:disabled{cursor:default}
+  header{
+    position:relative;display:grid;grid-template-columns:38px minmax(0,1fr) auto;
+    align-items:start;gap:15px;margin:0 0 28px;padding:0 0 23px;
+    border-bottom:1px solid var(--line);
+  }
+  header::after{
+    content:"";position:absolute;right:0;bottom:-3px;width:6px;height:6px;
+    background:var(--accent);
+  }
+  .mark{width:32px;height:32px;margin-top:2px;color:var(--fg)}
+  .title{min-width:0}
+  .title h1{margin:0;font-size:21px;font-weight:500;letter-spacing:.08em;line-height:1.35}
+  .title p{margin:0;line-height:1.6}
+  .title .catalogue{
+    margin-top:6px;color:var(--muted);font-size:11px;letter-spacing:1.7px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  #sub{margin-top:5px;color:var(--faint);font-size:11px;letter-spacing:.08em}
+  .ghost{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    min-height:38px;padding:8px 13px;border:1px solid var(--fg);
+    background:transparent;color:var(--fg);font-size:12px;cursor:pointer;white-space:nowrap;
+  }
+  .ghost svg{width:16px;height:16px;flex:none}
+  .ghost:hover{background:var(--fg);color:var(--bg)}
+  .weekbar{display:flex;align-items:center;gap:8px;margin:0 0 12px}
+  #thisWeek{margin-left:auto;min-height:34px;padding:6px 12px;font-size:11px;letter-spacing:1.7px}
+  .nav{
+    display:grid;place-items:center;width:36px;height:36px;padding:0 0 2px;
+    border:1px solid var(--line-strong);background:transparent;color:var(--fg);
+    font-size:22px;font-weight:300;line-height:1;cursor:pointer;user-select:none;
+  }
+  .nav:hover{background:var(--fg);color:var(--bg)}
+  .week-ticks{
+    display:flex;align-items:flex-end;justify-content:flex-start;gap:5px;
+    height:22px;margin:0 2px 14px;
+  }
+  .week-ticks button{
+    position:relative;width:3px;height:9px;padding:0;border:0;cursor:pointer;
+    background:var(--line);transition:height 160ms var(--ease),background 160ms var(--ease);
+  }
+  .week-ticks button:hover{height:14px;background:var(--fg)}
+  .week-ticks button.on{height:17px;background:var(--fg)}
+  .week-ticks button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+  .week-ticks button::after{
+    content:attr(data-w);position:absolute;left:50%;bottom:calc(100% + 5px);
+    transform:translateX(-50%) translateY(2px);
+    font-size:9px;letter-spacing:1.2px;color:var(--muted);white-space:nowrap;
+    opacity:0;pointer-events:none;transition:opacity 140ms linear,transform 140ms var(--ease);
+    font-variant-numeric:tabular-nums;
+  }
+  .week-ticks button:hover::after{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* 去掉常驻的 transform-style:preserve-3d。
+     perspective/translateZ 这些动画都是作用在 .grid-frame 自己身上，
+     不需要给子元素开 3D 上下文；留着它只会让整块一直处在 3D 合成层里。 */
+  .grid-frame{position:relative;margin:0 0 28px;padding:12px;
+    transition:transform 380ms var(--ease),opacity 300ms var(--ease);
+  }
+  .grid-frame.depth{transform:perspective(1000px) translateZ(-70px) scale(.975);opacity:.5}
+
+  /* 封面抬头：档案夹脊背上的编号与日期 */
+  .folio{
+    display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:2px 2px 10px;margin:0 0 10px;
+    border-bottom:1px solid var(--line);
+  }
+  .folio-tag{font-size:10px;letter-spacing:2px;color:var(--muted)}
+  .folio .label{
+    display:flex;align-items:baseline;gap:6px;
+    font-size:12px;font-weight:400;line-height:1.1;white-space:nowrap;
+  }
+  .folio .label b{font-size:30px;font-weight:300;line-height:1;font-variant-numeric:tabular-nums}
+  .folio .label span{
+    color:var(--muted);font-size:11px;letter-spacing:1.2px;
+    font-variant-numeric:tabular-nums;
+  }
+  .folio-term{margin-left:auto;font-size:10px;letter-spacing:1.4px;color:var(--faint)}
+
+  /* 换档案：旧的一本沉下去，新的一本落进来 */
+  .grid-frame.swapout{animation:swapout 170ms var(--ease) forwards}
+  .grid-frame.swapin{animation:swapin 330ms var(--ease)}
+  @keyframes swapout{
+    to{transform:perspective(1000px) translateY(10px) translateZ(-120px) rotateX(-4deg);opacity:0}
+  }
+  @keyframes swapin{
+    from{transform:perspective(1000px) translateY(-14px) translateZ(-150px);opacity:0}
+    to{transform:none;opacity:1}
+  }
+  .corner{position:absolute;width:14px;height:14px;pointer-events:none;color:var(--line-strong)}
+  .corner.tl{top:0;left:0;border-top:1px solid;border-left:1px solid}
+  .corner.tr{top:0;right:0;border-top:1px solid;border-right:1px solid}
+  .corner.bl{bottom:0;left:0;border-bottom:1px solid;border-left:1px solid}
+  .corner.br{right:0;bottom:0;border-right:1px solid;border-bottom:1px solid}
+  .grid{
+    display:grid;grid-template-columns:52px repeat(7,minmax(0,1fr));gap:1px;
+    overflow:visible;background:var(--line);border:1px solid var(--line);
+    position:relative}
+  .grid>*{min-width:0}
+  .ghead{
+    padding:11px 2px 10px;border-top:2px solid transparent;background:var(--surface);
+    color:var(--muted);text-align:center;font-size:11px;line-height:1.5;letter-spacing:1.1px;
+  }
+  .ghead b{display:block;color:var(--fg);font-size:13px;font-weight:500;letter-spacing:.08em}
+  .ghead span{display:block;font-variant-numeric:tabular-nums}
+  .ghead.today{border-top-color:var(--fg)}
+  .ghead.today b{font-weight:700}
+  .gt{
+    padding:10px 2px 0;background:var(--surface);color:var(--faint);
+    text-align:center;font-size:10px;line-height:1.35;
+  }
+  .gt b{display:block;color:var(--muted);font-size:11px;font-weight:500;letter-spacing:.06em}
+  .gt span{display:block;font-size:9px;letter-spacing:.04em;font-variant-numeric:tabular-nums}
+  /* ---------- 动效系统 ---------- */
+  :root{ --ease:cubic-bezier(.22,1,.36,1); --dur:220ms; }
+
+  /* 同上：preserve-3d 和常驻的 will-change 一起，会让整个网格长住在一个
+     提升过的合成层里。鼠标扫过时格子在变，GPU 就把整层重新栅格化，
+     很容易只重绘了一半——你看到的那块斜三角就是这么来的。
+     动画本身用的是作用在自己身上的 perspective/translateZ，不需要它们。 */
+  .grid{
+    transition:transform 380ms var(--ease), opacity 300ms var(--ease);
+  }
+  /* 只过渡 opacity / border-color / background。
+     之前这里还带着 filter，鼠标进网格时几十个格子同时拿到 filter:saturate()，
+     每个都新建一个合成层，GPU 层爆炸后就是那种斜三角的撕裂闪烁。 */
+  .cell,.course,.ghead,.gt{
+    transition:opacity var(--dur) var(--ease),
+               background-color var(--dur) var(--ease),
+               border-color var(--dur) var(--ease);
+  }
+  /* 聚焦：非命中行列淡出。同权重靠后声明的规则胜出，所以两类选择器叠加即取并集。 */
+  .grid.focus .cell,
+  .grid.focus .course,
+  .grid.focus .ghead,
+  .grid.focus .gt{ opacity:.34; }
+  .grid[data-col="1"] [data-c="1"],
+  .grid[data-col="2"] [data-c="2"],
+  .grid[data-col="3"] [data-c="3"],
+  .grid[data-col="4"] [data-c="4"],
+  .grid[data-col="5"] [data-c="5"],
+  .grid[data-col="6"] [data-c="6"],
+  .grid[data-col="7"] [data-c="7"],
+  .grid[data-row="1"] [data-r="1"],
+  .grid[data-row="2"] [data-r="2"],
+  .grid[data-row="3"] [data-r="3"],
+  .grid[data-row="4"] [data-r="4"],
+  .grid[data-row="5"] [data-r="5"],
+  .grid[data-row="6"] [data-r="6"]{ opacity:1; }
+
+  .cell.xcell{ box-shadow:inset 0 0 0 1.5px var(--fg); }
+  .course{ position:relative; z-index:1; }
+  /* hover 不能再改这三个东西：
+     border-left-width 会改变盒子尺寸（触发布局重算）、transform:scale 在
+     preserve-3d 的父层里会另起合成层、z-index 变化又让整层重排。
+     三者叠在一起，鼠标在格子上移动时就会出现花屏/残影。
+     只用描边 + 阴影 + 亮度，完全不碰几何。 */
+  .course:hover{
+    border-color:var(--line-strong);
+    box-shadow:0 4px 14px rgba(0,0,0,.18);
+    background-color:var(--surface-hi, rgba(255,255,255,.04));
+  }
+  .course:hover::before{
+    content:"";position:absolute;top:-1px;right:-1px;width:9px;height:9px;
+    border-top:1.5px solid var(--fg);border-right:1.5px solid var(--fg);
+  }
+  .xmark{
+    position:absolute;width:6px;height:6px;background:var(--fg);
+    opacity:0;pointer-events:none;z-index:7;
+    transition:opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+    transform:translate(-50%,-50%) scale(.4);
+  }
+  .xmark.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+
+  .mark path{
+    stroke-dasharray:220;stroke-dashoffset:220;
+    animation:draw 1.15s var(--ease) forwards;
+  }
+  .mark path:nth-child(2){animation-delay:.14s}
+  .mark path:nth-child(3){animation-delay:.28s}
+  @keyframes draw{ to{stroke-dashoffset:0} }
+  header{animation:fadein .5s var(--ease) both}
+  .weekbar{animation:fadein .5s var(--ease) .08s both}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* ---------- 立体转场 ----------
+     用 animation 而不是 transition：animation 会临时压过内联 transform，
+     所以切周时不会被鼠标倾斜的残留角度干扰；结束后不留 fill，交还给正常状态。 */
+  /* 切周：旧的一张沉下去，新的一张从深处升上来，像一叠档案换了最上面那张 */
+  .grid.pushout{ animation:pushout 170ms var(--ease) forwards; }
+  .grid.pushin{ animation:pushin 320ms var(--ease); }
+  @keyframes pushout{
+    to{ transform:perspective(900px) translateZ(-90px) scale(.962); opacity:0 }
+  }
+  @keyframes pushin{
+    from{ transform:perspective(900px) translateZ(-130px) scale(.94); opacity:0 }
+    to{ transform:none; opacity:1 }
+  }
+
+  /* 抽出档案：真卡片飞出来的替身 */
+  .drawn{
+    transition:transform 860ms cubic-bezier(.2,.85,.25,1), opacity 560ms linear !important;
+    position:fixed;z-index:60;margin:0;pointer-events:none;
+    display:flex;flex-direction:column;justify-content:center;gap:6px;
+    padding:22px 24px;box-sizing:border-box;
+    background:var(--surface);border:1px solid var(--line-strong);
+    box-shadow:none;
+    transition:transform 420ms cubic-bezier(.2,.85,.25,1), opacity 160ms linear;
+    will-change:transform;
+  }
+  .drawn.fade{ opacity:0; }
+  .dr-kicker{
+    display:flex;align-items:center;gap:8px;
+    font-size:10px;letter-spacing:1.7px;color:var(--muted);
+  }
+  .dr-no{margin-left:auto;font-variant-numeric:tabular-nums}
+  .dr-name{font-size:26px;font-weight:500;color:var(--fg);line-height:1.2;letter-spacing:-.2px}
+  .dr-meta{font-size:12px;color:var(--muted)}
+
+  /* 抽出时整个网格往后退 */
+  .grid.depth{
+    transform:perspective(1000px) translateZ(-70px) scale(.972);
+    opacity:.5;
+  }
+
+  /* 点开课程：块先抬起一下，再由面板从下方立体展开 */
+  .course.lift{ transform:scale(1.06); z-index:8; }
+  .sheet{
+    transform:perspective(1000px) translateY(20px) rotateX(9deg) scale(.97);
+    opacity:0; transform-origin:bottom center;
+    transition:transform 300ms var(--ease), opacity 220ms var(--ease);
+  }
+  .sheet.show{ transform:none; opacity:1; }
+  .scrim{ transition:opacity 240ms var(--ease); }
+
+  @media (prefers-reduced-motion:reduce){
+    .grid.pushout,.grid.pushin{animation:none}
+    .sheet{transition:none}
+    .course.lift{transform:none}
+    .drawn{
+    transition:transform 860ms cubic-bezier(.2,.85,.25,1), opacity 560ms linear !important;transition:none}
+    .grid.depth{transform:none;opacity:1}
+  }
+
+  @media (hover:none){
+    .course:hover{transform:none;border-left-width:2px}
+    .grid{transition:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .grid,.cell,.course,.ghead,.gt{transition:none}
+    .mark path{animation:none;stroke-dashoffset:0}
+    header,.weekbar{animation:none}
+    .course:hover{transform:none}
+  }
+
+  .cell{min-height:76px;background:var(--surface)}
+  .course{
+    position:relative;align-self:stretch;display:flex;flex-direction:column;gap:4px;
+    margin:5px 4px;padding:8px 6px 8px 8px;overflow:hidden;cursor:pointer;
+    border:1px solid var(--line);border-left:2px solid var(--ca);background:var(--cb);
+  }
+  .course:hover{border-color:var(--line-strong);border-left-color:var(--ca)}
+  .course .n{
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;
+    color:var(--fg);font-size:12px;font-weight:500;line-height:1.4;word-break:break-word;
+  }
+  .course .m{
+    overflow:hidden;color:var(--muted);font-size:10px;line-height:1.4;
+    white-space:nowrap;text-overflow:ellipsis;
+  }
+  .course .m .short{display:none}
+  .course .tc{
+    font-size:10px;color:var(--muted);line-height:1.25;letter-spacing:.2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  /* 开始时刻已经由左侧节次列给出了，块里再显示一遍是重复信息 */
+  .course .t{display:none}
+  .course.moved{border-style:dashed;border-left:2px solid var(--ca)}
+  .course.moved::after{
+    content:"调";position:absolute;top:3px;right:4px;color:var(--accent);
+    font-size:9px;line-height:1;letter-spacing:0;
+  }
+  .ovbar{
+    display:none;align-items:center;gap:8px;margin:0 0 14px;padding:8px 11px;
+    border:1px solid var(--line);border-left:2px solid var(--accent);
+    background:var(--surface);color:var(--muted);font-size:11px;letter-spacing:.04em;
+  }
+  .ovbar.show{display:flex}
+  .ovbar b{color:var(--fg);font-weight:500}
+  .ovbar .sp{flex:1}
+  .ovbar button{border:0;background:transparent;color:var(--accent);font-size:11px;cursor:pointer;padding:2px 4px}
+  .panel{padding:20px 22px;border:1px solid var(--line);background:var(--surface)}
+  .panel h2{
+    margin:0 0 17px;padding-bottom:11px;border-bottom:1px solid var(--line);
+    color:var(--fg);font-size:11px;font-weight:500;letter-spacing:1.7px;
+  }
+  .askrow{display:flex;align-items:end;gap:14px}
+  .askrow input{
+    flex:1;min-width:0;height:40px;padding:8px 2px;border:0;border-bottom:1px solid var(--line-strong);
+    outline:none;background:transparent;color:var(--fg);font-size:13px;
+  }
+  .askrow input::placeholder{color:var(--faint)}
+  .askrow input:focus{border-bottom-color:var(--accent)}
+  .askrow button{
+    min-width:70px;height:40px;padding:0 17px;border:1px solid var(--fg);
+    background:var(--fg);color:var(--on-ink);font-size:12px;font-weight:500;
+    letter-spacing:1.7px;cursor:pointer;
+  }
+  .askrow button:hover{background:transparent;color:var(--fg)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}
+  .chip{
+    padding:5px 10px;border:1px solid var(--line);background:transparent;color:var(--muted);
+    font-size:11px;line-height:1.5;letter-spacing:1.1px;cursor:pointer;
+  }
+  .chip:hover{border-color:var(--fg);color:var(--fg)}
+  .answer{
+    display:none;margin-top:17px;padding:12px 15px;border:0;border-left:2px solid var(--accent);
+    background:var(--bg);font-size:13px;line-height:1.75;white-space:pre-wrap;
+  }
+  .answer.show{display:block;animation:answer-in .18s ease-out}
+  .answer .kw{color:var(--accent);font-weight:500}
+  @keyframes answer-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+  footer{
+    margin-top:24px;padding-top:17px;border-top:1px solid var(--line);
+    color:var(--muted);text-align:center;font-size:11px;line-height:1.9;letter-spacing:1.2px;
+  }
+  .scrim{
+    position:fixed;inset:0;z-index:35;background:rgba(21,23,19,.48);
+    opacity:0;pointer-events:none;transition:opacity .18s;
+  }
+  .scrim.show{opacity:1;pointer-events:auto}
+  .sheet{
+    position:fixed;right:0;bottom:0;left:0;z-index:41;max-width:640px;max-height:80vh;
+    margin:0 auto;padding:22px 22px calc(20px + env(safe-area-inset-bottom));overflow:auto;
+    transform:translateY(102%);transition:transform .22s ease-out;
+    border:1px solid var(--line-strong);border-bottom:0;background:var(--surface);
+  }
+  .sheet::before{content:"";position:absolute;top:8px;right:22px;left:22px;height:1px;background:var(--line)}
+  .sheet::after{content:"";position:absolute;top:5px;left:19px;width:6px;height:6px;background:var(--accent)}
+  .sheet.show{transform:translateY(0)}
+  .sheet-x{
+    position:absolute;top:10px;right:10px;width:40px;height:40px;
+    display:grid;place-items:center;border:1px solid var(--line);
+    background:transparent;color:var(--fg);cursor:pointer;
+  }
+  .sheet-x:hover{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+  .sheet-x svg{width:14px;height:14px}
+  .sheet .kicker{
+    display:flex;align-items:center;gap:8px;
+    font-size:10px;letter-spacing:1.7px;color:var(--muted);
+    text-transform:uppercase;margin-bottom:10px;
+  }
+  .sheet .kicker::before{content:"";width:6px;height:6px;background:var(--fg);flex:none}
+  .sheet .kicker::after{content:"";height:1px;background:var(--line);flex:1}
+  .sheet .file-no{
+    font-size:10px;letter-spacing:1.4px;color:var(--muted);
+    font-variant-numeric:tabular-nums;margin-left:auto;
+  }
+  .sheet h3{margin:5px 0 0;font-size:16px;font-weight:500;letter-spacing:.04em}
+  .sheet .sub{margin:4px 0 16px;color:var(--muted);font-size:11px}
+  .sheet .preview{color:var(--accent)}
+  .sheet .lbl{margin:0 0 7px;color:var(--faint);font-size:11px;letter-spacing:1.7px}
+  .sheet .row{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:15px}
+  .opt{
+    min-width:40px;padding:7px 10px;border:1px solid var(--line);
+    background:transparent;color:var(--fg);font-size:11px;line-height:1.2;cursor:pointer;
+  }
+  .opt:hover{border-color:var(--fg)}
+  .opt.on{border-color:var(--fg);background:var(--fg);color:var(--on-ink)}
+  .sheet .acts{display:flex;gap:8px;margin-top:8px}
+  /* 课页详情：教师 / 地点 / 节次 / 周次 四格 */
+  .sheet .kv{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:16px 0 6px}
+  .sheet .kv>div{border-top:1px solid var(--line);padding-top:7px;min-width:0}
+  .sheet .kv i{display:block;font-style:normal;font-size:9.5px;letter-spacing:.12em;
+    color:var(--faint);margin-bottom:4px}
+  .sheet .kv b{display:block;font-size:12px;font-weight:500;color:var(--fg);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sheet .ghostbtn{
+    flex:none;background:none;border:1px solid var(--line-strong);color:var(--muted);
+    font:inherit;font-size:11px;padding:0 14px;height:38px;cursor:pointer;
+  }
+  .sheet .ghostbtn:hover{color:var(--fg);border-color:var(--fg)}
+  /* 主按钮吃掉剩余宽度，三个按钮就不会挤成一排等宽 */
+  .sheet .acts .primary{flex:1}
+  .sheet .acts button{
+    flex:1;height:42px;border:1px solid var(--line-strong);background:transparent;
+    color:var(--fg);font-size:12px;cursor:pointer;
+  }
+  .sheet .acts button:hover{border-color:var(--fg)}
+  .sheet .acts .primary{border-color:var(--fg);background:var(--fg);color:var(--on-ink);font-weight:500}
+  .sheet .acts .danger{color:var(--accent)}
+  .loading{opacity:.45}
+  @media (max-width:600px){
+    body{padding:22px 13px calc(24px + env(safe-area-inset-bottom));font-size:13px}
+    header{grid-template-columns:30px minmax(0,1fr) auto;gap:9px;margin-bottom:22px;padding-bottom:18px}
+    .mark{width:27px;height:27px}
+    .title h1{font-size:16px;letter-spacing:.04em;text-wrap:balance}
+    .title .catalogue{margin-top:5px;font-size:9px;letter-spacing:1px}
+    #sub{font-size:10px;letter-spacing:0}
+    .ghost{min-height:34px;padding:6px 8px;gap:5px;font-size:11px}
+    .ghost svg{width:14px;height:14px}
+    .weekbar{grid-template-columns:1fr auto;margin-bottom:8px}
+    .weeknav{grid-column:1;justify-self:start;gap:6px}
+    .weekbar .label{min-width:172px;font-size:12px}
+    .weekbar .label b{margin:0 2px;font-size:32px;vertical-align:-2px}
+    .weekbar .label span{display:block;margin:5px 0 0;font-size:10px;letter-spacing:1px}
+    #thisWeek{grid-column:2;min-height:32px;padding:5px 8px;font-size:10px;letter-spacing:1px}
+    .nav{width:30px;height:32px;font-size:19px}
+    .week-ticks{gap:5px;margin-bottom:12px}
+    /* 手机上把七天挤进 390px，每列只剩 43px，课名两行还看不全。
+       真正的问题不是放不下，是放得下但看不清——让表格横向铺开，
+       列宽回到 66px，只在 .grid-frame 里横滑，标题和控件不动。 */
+    .grid-frame{margin-bottom:20px;padding:7px;
+      overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .grid-frame::-webkit-scrollbar{display:none}
+    .corner{width:11px;height:11px}
+    .grid{min-width:528px;grid-template-columns:42px repeat(7,minmax(0,1fr))}
+    .ghead{padding:9px 1px 8px;font-size:10px;letter-spacing:0}
+    .ghead b{font-size:12px;letter-spacing:0}
+    .gt{padding:8px 0 0}
+    .gt b{font-size:10px;letter-spacing:0}
+    .gt span{font-size:8px;letter-spacing:0}
+    .cell{min-height:65px}
+    .course{gap:2px;margin:3px 1px;padding:5px 2px 5px 3px}
+    .course .n{font-size:9.5px;line-height:1.25;letter-spacing:-.4px;-webkit-line-clamp:3}
+    .course .m{font-size:8px;line-height:1.3;letter-spacing:-.2px}
+    .course .m .full{display:none}
+    .course .m .short{display:inline}
+    .course .tc{display:none}
+    .course .t{display:none}
+    .course.moved::after{top:2px;right:2px;font-size:7px}
+    .panel{padding:16px 14px}
+    .panel h2{margin-bottom:12px}
+    .askrow{gap:9px}
+    .askrow input{height:40px;font-size:13px}
+    .askrow button{min-width:56px;height:40px;padding:0 11px;font-size:11px;letter-spacing:1px}
+    .chips{gap:6px;margin-top:12px}
+    .chip{padding:4px 7px;font-size:10px;letter-spacing:.6px}
+    .answer{padding:11px 12px;font-size:12px}
+    footer{margin-top:19px;font-size:10px;letter-spacing:.6px}
+    .sheet{padding:22px 15px calc(16px + env(safe-area-inset-bottom))}
+    .sheet::before{right:15px;left:15px}
+    .sheet::after{left:12px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    button,.scrim,.sheet{transition:none}
+    .answer.show{animation:none}
+  }
+
+  /* ---------- 3D 入口：浮在左侧空白处 ---------- */
+  .to3d{
+    position:fixed;left:clamp(18px,2.4vw,44px);top:44%;transform:translateY(-50%);
+    z-index:30;display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+    padding:16px 20px 14px;border:1.5px solid var(--fg);background:var(--bg);
+    text-decoration:none;color:var(--fg);cursor:pointer;
+    transition:background .2s var(--ease),color .2s var(--ease);
+  }
+  .to3d b{font-size:34px;font-weight:600;letter-spacing:-1.5px;line-height:1}
+  .to3d span{font-size:10px;letter-spacing:.16em;line-height:1.5;color:var(--muted);
+    transition:color .2s var(--ease)}
+  .to3d i{font-style:normal;font-size:13px;margin-top:7px;
+    transition:transform .2s var(--ease)}
+  .to3d:hover{background:var(--fg);color:var(--bg)}
+  .to3d:hover span{color:var(--bg);opacity:.65}
+  .to3d:hover i{transform:translateX(4px)}
+  @media (max-width:1180px){ .to3d{left:10px;padding:12px 15px 11px}
+    .to3d b{font-size:28px} }
+  @media (max-width:860px){ .to3d{position:static;transform:none;flex-direction:row;
+    align-items:center;gap:8px;margin:0 0 14px;padding:10px 14px}
+    .to3d b{font-size:20px} .to3d i{margin:0} }
+</style>
+</head>
+<body>
+
+<header>
+  <svg viewBox="0 0 32 32" class="mark" aria-hidden="true">
+    <path d="M4 16c0-6 4-11 10-11s8 5 8 11-3 11-9 11S4 22 4 16z" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <path d="M28 16c0-6-4-11-10-11" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <path d="M2 16h9M16 9v14" fill="none" stroke="currentColor" stroke-width="1.4"/>
+  </svg>
+  <div class="title">
+    <h1 id="cls">课表</h1>
+    <p class="catalogue">TIMETABLE · 2026-2027-1</p>
+    <p id="sub">加载中…</p>
+  </div>
+  <button class="ghost" id="ics">
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 3v3M15 3v3M3 7h14M4 4h12v13H4z" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"/></svg>
+    存进日历
+  </button>
+</header>
+
+<div class="weekbar">
+  <button class="nav" id="prev" aria-label="上一周">‹</button>
+  <button class="nav" id="next" aria-label="下一周">›</button>
+  <button class="ghost" id="thisWeek">本周</button>
+</div>
+<div class="week-ticks" id="weekTicks" role="tablist" aria-label="选择周次"></div>
+
+<div class="ovbar" id="ovbar">
+  <span id="ovtext"></span><span class="sp"></span>
+  <button id="ovclear">全部撤销</button>
+</div>
+
+<div class="grid-frame" id="gridFrame">
+  <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span>
+  <span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
+
+  <div class="folio">
+    <span class="folio-tag" id="folioTag">WEEK</span>
+    <div class="label" id="weekLabel">—<span></span></div>
+    <span class="folio-term" id="folioTerm"></span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="panel">
+  <h2>课表问答</h2>
+  <div class="askrow">
+    <input id="q" aria-label="课表问题" placeholder="明天几节课 / 下一节 / 哪天空">
+    <button id="ask">发送</button>
+  </div>
+  <div class="chips">
+    <button class="chip">今天有什么课</button>
+    <button class="chip">明天几节课</button>
+    <button class="chip">下一节</button>
+    <button class="chip">哪天空</button>
+    <button class="chip">本周课表</button>
+  </div>
+  <div class="answer" id="answer"></div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet"></div>
+
+<footer>
+  这个文件可以离线用 · 不联网、不上传任何数据 · 可以直接发到手机上打开<br>
+  「存进日历」会生成一个 .ics 文件，在手机日历里打开即可导入整学期课程
+  
+</footer>
+
+<script>
+var DATA = {"meta":{"student":"示例大学 xxx 学生个人课表","className":"示例班级","semesterStart":"2026-08-31","today":"2026-11-03","currentWeek":10,"weekday":"周二","totalCourses":20,"periodTimes":{"1":"08:30","2":"09:25","3":"10:30","4":"11:25","5":"14:30","6":"15:25","7":"16:30","8":"17:25","9":"19:00","10":"19:55","11":"21:00","12":"21:55"},"periodEnd":{"1":"09:15","2":"10:10","3":"11:15","4":"12:10","5":"15:15","6":"16:10","7":"17:15","8":"18:10","9":"19:45","10":"20:40","11":"21:45","12":"22:40"},"palette":{"编译原理":0,"算法设计与分析":1,"移动应用开发":2,"计算机组成原理":3,"大学生就业指导":4,"操作系统":5,"计算机仿真":6,"人工智能基础":7,"专业英语":8,"计算机组成原理实验":9}},"start":"2026-08-31","today":null,"maxWeek":17,"palette":{"编译原理":0,"算法设计与分析":1,"移动应用开发":2,"计算机组成原理":3,"大学生就业指导":4,"操作系统":5,"计算机仿真":6,"人工智能基础":7,"专业英语":8,"计算机组成原理实验":9},"periodTimes":{"1":"08:30","2":"09:25","3":"10:30","4":"11:25","5":"14:30","6":"15:25","7":"16:30","8":"17:25","9":"19:00","10":"19:55","11":"21:00","12":"21:55"},"periodEnd":{"1":"09:15","2":"10:10","3":"11:15","4":"12:10","5":"15:15","6":"16:10","7":"17:15","8":"18:10","9":"19:45","10":"20:40","11":"21:45","12":"22:40"},"courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","day":1,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","day":2,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","day":3,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","day":5,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","day":2,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,4,6,8,10,12,14,16]},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼210","day":3,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[4]},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","day":3,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","day":4,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,4,6]},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","day":5,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","day":2,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","day":3,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,7,9,10,11,12,13,14,15,16,17]},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","day":4,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","day":1,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","day":2,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","day":3,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","day":4,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南303","day":5,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[9]},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","day":3,"startPeriod":9,"endPeriod":10,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[8,9,10,11,12,13,14]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","day":4,"startPeriod":9,"endPeriod":10,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[7]},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","day":5,"startPeriod":11,"endPeriod":12,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[8,9]}],"weeks":{"1":[{"day":1,"weekday":"周一","date":"2026-08-31","courses":[]},{"day":2,"weekday":"周二","date":"2026-09-01","courses":[]},{"day":3,"weekday":"周三","date":"2026-09-02","courses":[]},{"day":4,"weekday":"周四","date":"2026-09-03","courses":[]},{"day":5,"weekday":"周五","date":"2026-09-04","courses":[]},{"day":6,"weekday":"周六","date":"2026-09-05","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-06","courses":[]}],"2":[{"day":1,"weekday":"周一","date":"2026-09-07","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-08","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-09","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-10","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-11","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-12","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-13","courses":[]}],"3":[{"day":1,"weekday":"周一","date":"2026-09-14","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-15","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-16","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-17","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-18","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-19","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-20","courses":[]}],"4":[{"day":1,"weekday":"周一","date":"2026-09-21","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-22","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-23","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼210","room":"210","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-24","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-25","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-26","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-27","courses":[]}],"5":[{"day":1,"weekday":"周一","date":"2026-09-28","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-29","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-30","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-01","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-02","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-03","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-04","courses":[]}],"6":[{"day":1,"weekday":"周一","date":"2026-10-05","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-06","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-07","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-08","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-09","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-10","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-11","courses":[]}],"7":[{"day":1,"weekday":"周一","date":"2026-10-12","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-13","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-14","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-15","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":4,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-16","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-17","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-18","courses":[]}],"8":[{"day":1,"weekday":"周一","date":"2026-10-19","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-20","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-21","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-10-22","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-23","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":5,"startPeriod":11,"endPeriod":12,"start":"21:00","end":"22:40","note":"分组01"}]},{"day":6,"weekday":"周六","date":"2026-10-24","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-25","courses":[]}],"9":[{"day":1,"weekday":"周一","date":"2026-10-26","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-27","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-28","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-10-29","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-30","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南303","room":"303","day":5,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":5,"startPeriod":11,"endPeriod":12,"start":"21:00","end":"22:40","note":"分组01"}]},{"day":6,"weekday":"周六","date":"2026-10-31","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-01","courses":[]}],"10":[{"day":1,"weekday":"周一","date":"2026-11-02","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-03","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-04","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-05","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-06","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-07","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-08","courses":[]}],"11":[{"day":1,"weekday":"周一","date":"2026-11-09","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-10","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-11","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-12","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-13","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-14","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-15","courses":[]}],"12":[{"day":1,"weekday":"周一","date":"2026-11-16","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-17","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-18","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-19","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-20","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-21","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-22","courses":[]}],"13":[{"day":1,"weekday":"周一","date":"2026-11-23","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-24","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-25","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-26","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-27","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-28","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-29","courses":[]}],"14":[{"day":1,"weekday":"周一","date":"2026-11-30","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-01","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-02","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-12-03","courses":[]},{"day":5,"weekday":"周五","date":"2026-12-04","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-05","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-06","courses":[]}],"15":[{"day":1,"weekday":"周一","date":"2026-12-07","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-08","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-09","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-10","courses":[{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-12-11","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-12","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-13","courses":[]}],"16":[{"day":1,"weekday":"周一","date":"2026-12-14","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-15","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-16","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-17","courses":[]},{"day":5,"weekday":"周五","date":"2026-12-18","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-19","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-20","courses":[]}],"17":[{"day":1,"weekday":"周一","date":"2026-12-21","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-22","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-23","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-24","courses":[{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-12-25","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-26","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-27","courses":[]}]}};
+
+var $ = function(s){ return document.querySelector(s); };
+/* 色相按黄金角（≈137.5°）从 212° 起散开：任意拿前 N 个都尽量互相远，
+   不用手工挑 12 个色还得担心前 8 个里塞了两个绿。 */
+var PALETTE = [212, 350, 127, 264, 42, 180, 317, 95, 232, 10, 147, 285];
+/* DATA.today 只在构建时用 --date 指定才有值（截图/演示要用固定日期）。
+   正常打开时它是 null，一律以系统时间为准，文件放半年也不会「卡在构建那天」。 */
+var NOW = DATA.today ? new Date(DATA.today + 'T00:00:00') : new Date();
+var DAY_NAMES = {1:'周一',2:'周二',3:'周三',4:'周四',5:'周五',6:'周六',7:'周日'};
+var DAY_CHARS = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':7,'天':7,
+                 '1':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7};
+var HELP = '可以这样问我：\n· 今天有什么课 / 今天几节课\n· 明天课表 / 后天有课吗 / 周三有课吗\n'
+         + '· 本周课表\n· 下一节是什么课\n· 哪天空';
+
+var curWeek = null;
+var startDate = new Date(DATA.start + 'T00:00:00');
+
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+function isoOf(d){ return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
+function parseISO(s){ return new Date(s + 'T00:00:00'); }
+function weekOfDate(d){
+  var days = Math.floor((d - startDate) / 86400000);
+  return Math.floor(days / 7) + 1;
+}
+/* ---------- 调课（例外层）----------
+   课表定义不改，只在上面叠一层「这一次」：
+   某门课在某天某节的那一节，挪到另一天另一节，或者直接停课。
+   这样前面几周上过的课不会被历史性地改写。
+   记录存在本机浏览器里，换设备不同步。 */
+var OV_KEY = 'kebiao-overrides-v1';
+var OV = (function(){
+  try { return JSON.parse(localStorage.getItem(OV_KEY) || '[]') || []; } catch (e) { return []; }
+})();
+function saveOv(){
+  try { localStorage.setItem(OV_KEY, JSON.stringify(OV)); } catch (e) {}
+}
+function ovOf(name, date, period){
+  for (var i = 0; i < OV.length; i++){
+    var o = OV[i];
+    if (o.name === name && o.fromDate === date && o.fromPeriod === period) return o;
+  }
+  return null;
+}
+function applyOverrides(days){
+  if (!OV.length) return days;
+  var out = days.map(function(d){
+    return {
+      day: d.day, weekday: d.weekday, date: d.date,
+      courses: d.courses.filter(function(c){ return !ovOf(c.name, d.date, c.startPeriod); })
+    };
+  });
+  OV.forEach(function(o){
+    if (o.type !== 'move') return;
+    var t = null;
+    for (var i = 0; i < out.length; i++) if (out[i].date === o.toDate) t = out[i];
+    if (!t) return;
+    var end = o.toPeriod + (o.span || 2) - 1;
+    t.courses.push({
+      name: o.name, teacher: o.teacher || '', location: o.location || '', room: o.room || '',
+      day: t.day, startPeriod: o.toPeriod, endPeriod: end,
+      start: DATA.periodTimes[String(o.toPeriod)] || '',
+      end: DATA.periodEnd[String(end)] || '',
+      moved: true
+    });
+  });
+  out.forEach(function(d){
+    d.courses.sort(function(a, b){ return a.startPeriod - b.startPeriod; });
+  });
+  return out;
+}
+
+function weekDays(w){
+  var d = DATA.weeks[String(w)];
+  return d ? applyOverrides(d) : null;
+}
+
+/* 颜色按课程名查构建时给的序号：同一门课整学期同色，不同课尽量不同色。
+   以前用「名字哈希 % 8」，15 门课必然撞色，扫一眼分不出哪门是哪门。 */
+function colorOf(name){
+  var idx = (DATA.palette && DATA.palette[name]);
+  if (typeof idx !== 'number') idx = 0;
+  var hue = PALETTE[idx % PALETTE.length];
+  return { border: 'hsl(' + hue + ' 18% 45%)', bg: 'hsl(' + hue + ' 18% 45% / .06)' };
+}
+function rowOf(p){ return Math.floor((p - 1) / 2) + 1; }
+
+function renderGrid(days){
+  var grid = $('#grid');
+  grid.innerHTML = '';
+  var maxP = 8;
+  days.forEach(function(d){ d.courses.forEach(function(c){ if (c.endPeriod > maxP) maxP = c.endPeriod; }); });
+  var rows = Math.max(4, Math.ceil(maxP / 2));
+  var todayIso = isoOf(NOW);
+
+  var blank = document.createElement('div');
+  blank.className = 'ghead';
+  grid.appendChild(blank);
+
+  days.forEach(function(d){
+    var el = document.createElement('div');
+    el.className = 'ghead' + (d.date === todayIso ? ' today' : '');
+    el.dataset.c = String(d.day);
+    el.innerHTML = '<b>' + d.weekday + '</b><span>' + d.date.slice(5).replace('-','/') + '</span>';
+    grid.appendChild(el);
+  });
+
+  for (var r = 1; r <= rows; r++){
+    var t = document.createElement('div');
+    t.className = 'gt';
+    t.dataset.r = String(r);
+    var sp = (r - 1) * 2 + 1;
+    t.innerHTML = '<b>' + sp + '-' + (sp + 1) + '</b>'
+                + '<span>' + (DATA.periodTimes[String(sp)] || '') + '</span>';
+    grid.appendChild(t);
+    for (var c = 0; c < 7; c++){
+      var cell = document.createElement('div');
+      cell.className = 'cell' + (days[c].date === todayIso ? ' today' : '');
+      cell.dataset.c = String(c + 1);
+      cell.dataset.r = String(r);
+      cell.style.gridRow = String(r + 1);
+      cell.style.gridColumn = String(c + 2);
+      grid.appendChild(cell);
+    }
+  }
+
+  days.forEach(function(d, i){
+    d.courses.forEach(function(c){
+      var startRow = rowOf(c.startPeriod);
+      var span = Math.max(1, rowOf(c.endPeriod) + 1 - startRow);
+      var el = document.createElement('div');
+      var col = colorOf(c.name);
+      el.className = 'course' + (c.moved ? ' moved' : '');
+      el.dataset.c = String(i + 1);
+      el.dataset.r = String(startRow);
+      el.style.gridRow = (startRow + 1) + ' / span ' + span;
+      el.style.gridColumn = String(i + 2);
+      el.style.setProperty('--ca', col.border);
+      el.style.setProperty('--cb', col.bg);
+      el.title = c.name + '\n' + c.start + '–' + c.end + '\n' + (c.location || '') + '\n' + (c.teacher || '');
+      el.innerHTML = '<div class="n">' + c.name + '</div>'
+                   + '<div class="m"><span class="full">' + (c.location || '') + '</span>'
+                   + '<span class="short">' + (c.room || c.location || '') + '</span></div>'
+                   + '<div class="tc">' + (c.teacher || '') + '</div>'
+                   + '<div class="t">' + (c.start || '') + '</div>';
+      el.onclick = (function(course, dayInfo, node){
+        return function(){ openSheet(course, dayInfo, node); };
+      })(c, d, el);
+      grid.appendChild(el);
+    });
+  });
+
+  var xm = document.createElement('div');
+  xm.className = 'xmark';
+  grid.appendChild(xm);
+
+  grid.style.gridTemplateRows = 'auto repeat(' + rows + ', minmax(70px, auto))';
+}
+
+/* 开学前打开会是第 0 周、放假后会是第 30 周，钳到 1..maxWeek，别让页面空白 */
+function clampWeek(w){ return Math.min(DATA.maxWeek, Math.max(1, w)); }
+
+var _flipTimer = null;
+function reduceMotion(){
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function paintWeek(w, days){
+  curWeek = w;
+  $('#weekLabel').innerHTML = '<b>' + pad(w) + '</b><span>'
+    + days[0].date.slice(5).replace('-','/') + ' – '
+    + days[6].date.slice(5).replace('-','/') + '</span>';
+  document.querySelectorAll('#weekTicks button').forEach(function(tick, i){
+    var on = i + 1 === w;
+    tick.classList.toggle('on', on);
+    tick.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+}
+
+/* 刻痕不是装饰：每一根代表一周，点哪根切哪周 */
+function buildWeekTicks(){
+  var box = $('#weekTicks');
+  if (!box || box.childElementCount) return;
+  for (var i = 1; i <= DATA.maxWeek; i++){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.w = 'W' + pad(i);
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-label', '第 ' + i + ' 周');
+    b.setAttribute('aria-selected', 'false');
+    b.onclick = (function(n){ return function(){ showWeek(n, true); }; })(i);
+    box.appendChild(b);
+  }
+  var term = document.getElementById('folioTerm');
+  if (term && DATA.start){
+    var y0 = parseInt(String(DATA.start).slice(0, 4), 10);
+    term.textContent = y0 + '–' + (y0 + 1) + ' · 共 ' + DATA.maxWeek + ' 周';
+  }
+}
+
+/* 调试钩子：?probe=1 自动打开第一节的课页，方便截图核对 */
+if (location.search.indexOf('probe=') >= 0){
+  setTimeout(function(){
+    var c = document.querySelector('.course');
+    if (!c) return;
+    c.click();
+    if (location.search.indexOf('probe=2') >= 0){
+      setTimeout(function(){
+        var b = document.querySelector('[data-k="tomove"]');
+        if (b) b.click();
+      }, 200);
+    }
+  }, 260);
+}
+
+/* animate 只在「用户主动切周」时为 true；调课刷新、问答跳转不翻页，否则太吵 */
+function showWeek(w, animate){
+  var days = weekDays(w);
+  if (!days) return;
+
+  if (!animate || reduceMotion()){
+    paintWeek(w, days);
+    renderGrid(days);
+    return;
+  }
+
+  var frame = $('#gridFrame');
+  paintWeek(w, days);
+  if (_flipTimer) clearTimeout(_flipTimer);
+  frame.classList.remove('swapin');
+  frame.classList.add('swapout');
+  _flipTimer = setTimeout(function(){
+    renderGrid(days);
+    frame.classList.remove('swapout');
+    void frame.offsetWidth;
+    frame.classList.add('swapin');
+    _flipTimer = null;
+  }, 160);
+}
+
+function coursesOn(iso){
+  var d = parseISO(iso);
+  var w = weekOfDate(d);
+  var days = weekDays(w);
+  if (!days) return [];
+  for (var i = 0; i < days.length; i++) if (days[i].date === iso) return days[i].courses;
+  return [];
+}
+
+function nextCourse(from){
+  var base = new Date(from.getTime());
+  for (var off = 0; off < 7; off++){
+    var d = new Date(base.getTime() + off * 86400000);
+    var list = coursesOn(isoOf(d));
+    for (var i = 0; i < list.length; i++){
+      var c = list[i];
+      if (!c.start) continue;
+      var parts = c.start.split(':');
+      var st = new Date(d.getFullYear(), d.getMonth(), d.getDate(), +parts[0], +parts[1], 0);
+      if (st <= from) continue;
+      var mins = Math.round((st - from) / 60000);
+      return { c: c, date: isoOf(d), days: off,
+               countdown: mins >= 60 ? Math.floor(mins/60) + '小时' + (mins%60) + '分' : mins + '分' };
+    }
+  }
+  return null;
+}
+
+/* 用户很少把课程名说全："算法设计在哪上" 里只有前缀。
+   先把疑问词剥掉得到 core，再看 core 与课程名是否互相包含，取最长的那个命中。 */
+function matchCourseName(q){
+  var core = q.replace(/[?？。，,、\s]/g, '')
+              .replace(/(在哪儿上|在哪上|在哪|什么时候上|什么时候|几节课|几节|上什么|有课吗|上课|在哪呢|呢|吗|的|课)/g, '');
+  var best = null;
+  DATA.courses.forEach(function(c){
+    var n = c.name;
+    if (!n || n.length < 2) return;
+    var hit = q.indexOf(n) >= 0
+           || (core.length >= 2 && (n.indexOf(core) >= 0 || core.indexOf(n) >= 0));
+    if (hit && (!best || n.length > best.length)) best = n;
+  });
+  return best;
+}
+
+/* 周次压缩：[1,2,3,5,7,8] → "1-3、5、7-8 周"；等差 2 的整列 → "2-16 双周" */
+function weekRanges(weeks){
+  if (weeks.length >= 4){
+    var step = weeks[1] - weeks[0], same = true;
+    for (var k = 2; k < weeks.length; k++){
+      if (weeks[k] - weeks[k - 1] !== step) { same = false; break; }
+    }
+    if (same && step === 2){
+      var tail = weeks[0] === 1 ? '单周' : (weeks[0] === 2 ? '双周' : '隔周');
+      return weeks[0] + '-' + weeks[weeks.length - 1] + ' ' + tail;
+    }
+  }
+  var out = [], i = 0;
+  while (i < weeks.length){
+    var j = i;
+    while (j + 1 < weeks.length && weeks[j + 1] === weeks[j] + 1) j++;
+    out.push(j === i ? String(weeks[i]) : weeks[i] + '-' + weeks[j]);
+    i = j + 1;
+  }
+  return out.join('、') + ' 周';
+}
+
+function weekText(c){
+  if (c.weeks && c.weeks.length) return weekRanges(c.weeks);
+  if (c.weekType === 'odd') return '单周';
+  if (c.weekType === 'even') return '双周';
+  return '每周';
+}
+
+function ask(text){
+  var q = (text || '').trim();
+  var ans = $('#answer');
+  if (!q) return;
+  ans.classList.add('show');
+  var now = NOW;
+  var todayIso = isoOf(now);
+  var out = { intent: 'unknown', text: '' };
+
+  if (/帮助|怎么用|用法|菜单|help/i.test(q)){
+    out = { intent: 'help', text: HELP };
+  } else if (/天气|气温|下雨|降温|冷不冷|热不热|带伞/.test(q)){
+    out = { intent: 'unknown', text: '天气还不支持哦，先问我课表吧。\n\n' + HELP };
+  } else if (/本周|这周|整周|周表|一周/.test(q)){
+    var w = weekOfDate(now);
+    var days = weekDays(w);
+    var total = 0;
+    if (days) days.forEach(function(d){ total += d.courses.length; });
+    showWeek(w);
+    out = { intent: 'week', text: '本周是第 ' + w + ' 周，共 ' + total + ' 节课。' };
+  } else if (/下一节|下节|接下来|还有多久/.test(q)){
+    var n = nextCourse(now);
+    if (!n) out = { intent: 'next', text: '接下来 7 天没有课。' };
+    else out = { intent: 'next', text: (n.days === 0 ? '今天' : DAY_NAMES[parseISO(n.date).getDay() || 7])
+        + ' ' + n.c.start + ' 上 ' + n.c.name + '，还有 ' + n.countdown + '（' + (n.c.location || '') + '）。' };
+  } else if (/哪天空|哪天没课|有空|没课/.test(q)){
+    var free = [];
+    for (var i = 1; i <= 7; i++){
+      var d = new Date(now.getTime() + i * 86400000);
+      if (coursesOn(isoOf(d)).length === 0){
+        free.push(DAY_NAMES[d.getDay() || 7]);
+      }
+    }
+    out = { intent: 'free', text: free.length ? '接下来一周 ' + free.join('、') + ' 没课。'
+                                              : '接下来一周每天都有课，辛苦了。' };
+  } else {
+    var hitName = matchCourseName(q);
+    if (hitName){
+      /* 一门课一周可能上好几个时段（比如算法设计周二 1-2 和 3-4），
+         只报第一个时段会误导，所以按同名聚合成一份清单。 */
+      var slots = DATA.courses.filter(function(c){ return c.name === hitName; });
+      slots.sort(function(a, b){ return a.day - b.day || a.startPeriod - b.startPeriod; });
+      var lines = slots.map(function(c){
+        return DAY_NAMES[c.day] + ' 第 ' + c.startPeriod + '-' + c.endPeriod + ' 节 · '
+             + (c.room || c.location || '') + ' · ' + weekText(c);
+      });
+      out = { intent: 'course', text: hitName + (slots[0].teacher ? '（' + slots[0].teacher + '）' : '')
+        + '\n' + lines.join('\n') };
+    } else {
+      var m = q.match(/周([一二三四五六日天1-7])/);
+      if (m){
+        var target = DAY_CHARS[m[1]];
+        var delta = target - (now.getDay() || 7);
+        var dd = new Date(now.getTime() + delta * 86400000);
+        var list = coursesOn(isoOf(dd));
+        showWeek(weekOfDate(dd));
+        out = { intent: 'day', text: DAY_NAMES[target] + '共 ' + list.length + ' 节课。'
+          + (list.length ? '\n' + list.map(function(c){ return c.start + ' ' + c.name + ' @ ' + c.location; }).join('\n') : '') };
+      } else {
+        var map = [['前天', -2], ['昨天', -1], ['明天', 1], ['后天', 2]];
+        var matched = null;
+        map.forEach(function(p){ if (q.indexOf(p[0]) >= 0) matched = p; });
+        if (matched){
+          var d2 = new Date(now.getTime() + matched[1] * 86400000);
+          var l2 = coursesOn(isoOf(d2));
+          showWeek(weekOfDate(d2));
+          out = { intent: 'day', text: matched[0] + '（' + DAY_NAMES[d2.getDay() || 7] + '）共 ' + l2.length + ' 节课。'
+            + (l2.length ? '\n' + l2.map(function(c){ return c.start + ' ' + c.name + ' @ ' + c.location; }).join('\n') : '') };
+        } else if (/今天|今日/.test(q)){
+          var l3 = coursesOn(todayIso);
+          showWeek(weekOfDate(now));
+          out = { intent: 'today', text: '今天（' + DAY_NAMES[now.getDay() || 7] + '）共 ' + l3.length + ' 节课。'
+            + (l3.length ? '\n' + l3.map(function(c){ return c.start + ' ' + c.name + ' @ ' + c.location; }).join('\n') : '') };
+        } else {
+          out = { intent: 'unknown', text: '没太懂「' + q + '」。\n\n' + HELP };
+        }
+      }
+    }
+  }
+  ans.textContent = out.text;
+}
+
+function icsEscape(s){
+  return (s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+}
+function buildICS(){
+  var L = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//class-schedule//CN',
+           'CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:我的课表'];
+  var stamp = new Date().toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  DATA.courses.forEach(function(c, idx){
+    var weeks = (c.weeks && c.weeks.length) ? c.weeks : null;
+    var first, interval, count;
+    if (weeks){
+      first = weeks[0];
+      interval = weeks.length > 1 ? (weeks[1] - weeks[0]) : 1;
+      count = weeks.length;
+    } else {
+      first = c.startWeek;
+      interval = (c.weekType === 'odd' || c.weekType === 'even') ? 2 : 1;
+      count = Math.ceil(c.totalWeeks / interval);
+    }
+    var d = new Date(startDate.getTime() + ((first - 1) * 7 + (c.day - 1)) * 86400000);
+    var ymd = d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate());
+    var st = DATA.periodTimes[String(c.startPeriod)] || '';
+    var et = DATA.periodEnd[String(c.endPeriod)] || '';
+    if (!st || !et) return;
+    var sum = c.name + (c.location ? ' @ ' + c.location : '');
+    L.push('BEGIN:VEVENT',
+      'UID:course-' + idx + '-' + ymd + '@class-schedule',
+      'DTSTAMP:' + stamp,
+      'DTSTART:' + ymd + 'T' + st.replace(':','') + '00',
+      'DTEND:' + ymd + 'T' + et.replace(':','') + '00',
+      'RRULE:FREQ=WEEKLY;INTERVAL=' + interval + ';COUNT=' + count,
+      'SUMMARY:' + icsEscape(sum),
+      'LOCATION:' + icsEscape(c.location || ''),
+      'END:VEVENT');
+  });
+  L.push('END:VCALENDAR');
+  return L.join('\r\n') + '\r\n';
+}
+
+/* ---------- 调课面板 ---------- */
+var edit = null;
+var _ghost = null;
+var _openSig = null;
+var sheetEl = $('#sheet'), scrimEl = $('#scrim');
+
+function dateOfWeekDay(w, day){
+  return new Date(startDate.getTime() + ((w - 1) * 7 + (day - 1)) * 86400000);
+}
+function ovTargetOf(name, date, period){
+  for (var i = 0; i < OV.length; i++){
+    var o = OV[i];
+    if (o.type === 'move' && o.name === name && o.toDate === date && o.toPeriod === period) return o;
+  }
+  return null;
+}
+function refresh(){
+  updateOvbar();
+  showWeek(clampWeek(curWeek || weekOfDate(NOW)), false);
+}
+function updateOvbar(){
+  var bar = $('#ovbar');
+  if (OV.length){
+    bar.classList.add('show');
+    $('#ovtext').innerHTML = '已记录 <b>' + OV.length + '</b> 处调课';
+  } else {
+    bar.classList.remove('show');
+  }
+}
+function closeSheet(){
+  /* 刚弹出来就被关掉：真实鼠标点击时 click 之后往往还跟着一次
+     落在遮罩上的事件（或者双击的第二下），面板一出现正好盖住指针。
+     给 260ms 的免疫期，任何关闭请求在这段时间内都忽略。 */
+  if (Date.now() - _openedAt < 520) return;
+  sheetEl.classList.remove('show');
+  scrimEl.classList.remove('show');
+  var fr = document.getElementById('gridFrame'); if (fr) fr.classList.remove('depth');
+  _openSig = null;
+  dropGhost();
+}
+
+var sheetMode = 'detail';
+
+var _openedAt = 0;
+
+function openSheet(c, day, node){
+  /* 再点同一块就关掉——不用去够右上角的 × */
+  var sig = c.name + '|' + day.date + '|' + c.startPeriod;
+  if (sheetEl.classList.contains('show') && _openSig === sig){
+    closeSheet();
+    return;
+  }
+  _openSig = sig;
+  sheetMode = 'detail';
+
+  var w = weekOfDate(parseISO(day.date));
+  var exists = ovOf(c.name, day.date, c.startPeriod) || ovTargetOf(c.name, day.date, c.startPeriod);
+  var span = Math.max(1, (c.endPeriod || c.startPeriod + 1) - c.startPeriod + 1);
+  edit = {
+    name: c.name, date: day.date, week: w, period: c.startPeriod, span: span,
+    teacher: c.teacher || '', location: c.location || '', room: c.room || '',
+    exists: exists, weekOffset: 0, toDay: day.day,
+    toPeriod: Math.floor((c.startPeriod - 1) / 2) * 2 + 1
+  };
+  if (exists && exists.type === 'move'){
+    var tw = weekOfDate(parseISO(exists.toDate));
+    edit.weekOffset = Math.max(0, Math.min(2, tw - w));
+    edit.toDay = parseISO(exists.toDate).getDay() || 7;
+    edit.toPeriod = exists.toPeriod;
+  }
+  renderSheet();
+  _openedAt = Date.now();
+  sheetEl.classList.add('show');
+  scrimEl.classList.add('show');
+
+  if (node && !reduceMotion()){
+    drawOut(node, function(){
+      sheetEl.classList.add('show');
+      scrimEl.classList.add('show');
+    });
+  } else {
+    sheetEl.classList.add('show');
+    scrimEl.classList.add('show');
+  }
+}
+
+/* 把课程块从网格里「抽出来」：克隆一份飞向屏幕中央并放大，
+   网格同时后退变淡。像从档案架里抽出一份文件摊到眼前。 */
+function drawOut(node, done){
+  var first = node.getBoundingClientRect();
+  var w = Math.min(430, window.innerWidth - 56);
+  var h = Math.min(230, window.innerHeight * 0.42);
+  var cx = window.innerWidth / 2;
+  var cy = window.innerHeight * 0.44;
+
+  /* 先按「最终尺寸」建卡片，再用反向 transform 缩回原来的格子。
+     这样文字是按最终字号光栅化的，放大过程全程清晰；
+     反过来（先小后 scale）就会糊成一团。 */
+  var g = document.createElement('div');
+  g.className = 'drawn';
+  g.style.left = (cx - w / 2) + 'px';
+  g.style.top = (cy - h / 2) + 'px';
+  g.style.width = w + 'px';
+  g.style.height = h + 'px';
+  g.style.transformOrigin = 'center center';
+
+  var c = edit;
+  var pn = function(n){ return (n < 10 ? '0' : '') + n; };
+  g.innerHTML = '<div class="dr-kicker">档案 / FILE<span class="dr-no">W'
+    + pn(c.week) + '·D' + pn(c.toDay || 1) + '·P' + pn(c.period) + '</span></div>'
+    + '<div class="dr-name">' + c.name + '</div>'
+    + '<div class="dr-meta">' + (c.teacher || '') + '　' + (c.location || c.room || '') + '</div>';
+
+  var dx = (first.left + first.width / 2) - cx;
+  var dy = (first.top + first.height / 2) - cy;
+  var sc = first.width / w;
+  g.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) scale(' + sc.toFixed(4) + ')';
+
+  if (_ghost){ _ghost.remove(); _ghost = null; }
+  _ghost = g;
+  /* 38：压在遮罩(35)之上、面板(41)之下。
+     低于遮罩会被那层 .48 的黑压暗；高于面板又会盖住"关闭"按钮。 */
+  g.style.zIndex = '38';
+  document.body.appendChild(g);
+  var frame = document.getElementById('gridFrame');
+  if (frame) frame.classList.add('depth');
+
+  setTimeout(function(){
+    g.style.transform = 'translate(0,0) scale(1) translateZ(120px) rotateX(6deg)';
+  }, 20);
+
+  /* 430ms 就走完了，肉眼只看到"闪一下"。
+     拉到 700ms 让它停住看清，面板同时升起；再用 420ms 慢慢淡出，
+     两层的交接是叠着的，不是"卡片消失、面板出现"。 */
+  /* 面板升起后这张卡片**不消失**，一直留在那儿，直到点 X / 遮罩 / ESC
+     关面板时再一起收掉（closeSheet 里的 dropGhost）。 */
+  setTimeout(done, 680);
+}
+
+function dropGhost(){
+  if (_ghost){ _ghost.remove(); _ghost = null; }
+}
+
+/* 点课程先看到的是"这一节课"本身：叫什么、谁上、在哪、第几周。
+   调课是它下面的一个动作，不是点开就等于要改。 */
+function renderDetail(){
+  var pn = function(n){ return (n < 10 ? '0' : '') + n; };
+  var d = parseISO(edit.date);
+  var day = d.getDay() || 7;
+  var t0 = DATA.periodTimes[String(edit.period)] || '';
+  var t1 = DATA.periodEnd[String(edit.period + edit.span - 1)] || '';
+  var same = (DATA.courses || []).filter(function(x){ return x.name === edit.name; });
+  var weeks = same.length ? same[0].weeks : [];
+  var nWeeks = weeks.length;
+
+  var h = '<button class="sheet-x" data-k="close" aria-label="关闭">'
+        + '<svg viewBox="0 0 14 14" aria-hidden="true">'
+        + '<path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg></button>';
+  h += '<div class="kicker">课页 / SECTION'
+        + '<span class="file-no">W' + pn(edit.week) + '·D' + pn(day)
+        + '·P' + pn(edit.period) + '</span></div>';
+  h += '<h3>' + edit.name + '</h3>';
+  h += '<div class="sub">第 ' + edit.week + ' 周 ' + DAY_NAMES[day]
+        + ' · ' + (t0 ? t0 + '–' + t1 : '') + '</div>';
+
+  h += '<div class="kv">'
+        + '<div><i>教师</i><b>' + (edit.teacher || '—') + '</b></div>'
+        + '<div><i>地点</i><b>' + (edit.location || edit.room || '—') + '</b></div>'
+        + '<div><i>节次</i><b>第 ' + edit.period + '–' + (edit.period + edit.span - 1) + ' 节</b></div>'
+        + '<div><i>周次</i><b>' + (nWeeks ? nWeeks + ' 周有课' : '—') + '</b></div>'
+        + '</div>';
+
+  if (edit.exists){
+    var toW = weekOfDate(parseISO(edit.exists.toDate));
+    h += '<div class="sub" style="margin:10px 0 14px">这一节已调整到：第 ' + toW + ' 周 '
+      + DAY_NAMES[parseISO(edit.exists.toDate).getDay() || 7] + ' 第 ' + edit.exists.toPeriod + ' 节</div>';
+  }
+
+  h += '<div class="acts">';
+  h += '<button class="ghostbtn" data-k="close">关闭</button>';
+  h += '<button class="primary" data-k="tomove">调整这次课 →</button>';
+  h += '</div>';
+
+  sheetEl.innerHTML = h;
+}
+
+function renderSheet(){
+  var tw = edit.week + edit.weekOffset;
+  var toDate = dateOfWeekDay(tw, edit.toDay);
+  var endP = edit.toPeriod + edit.span - 1;
+  var valid = tw >= 1 && tw <= DATA.maxWeek;
+  var noop = isoOf(toDate) === edit.date && edit.toPeriod === edit.period;
+
+  var pn = function(n){ return (n < 10 ? '0' : '') + n; };
+  if (sheetMode !== 'move'){ renderDetail(); return; }
+  var h = '<button class="sheet-x" data-k="close" aria-label="关闭">'
+        + '<svg viewBox="0 0 14 14" aria-hidden="true">'
+        + '<path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg></button>';
+  h += '<div class="kicker">调整 / MOVE'
+        + '<span class="file-no">W' + pn(edit.week) + '·D' + pn(edit.toDay || 1)
+        + '·P' + pn(edit.period) + '</span></div>';
+  h += '<h3>' + edit.name + '</h3>';
+  h += '<div class="sub">第 ' + edit.week + ' 周 ' + DAY_NAMES[
+        parseISO(edit.date).getDay() || 7] + ' 第 ' + edit.period + '-' +
+        (edit.period + edit.span - 1) + ' 节 · ' + (edit.location || '') + '</div>';
+
+  h += '<div class="lbl">移到</div><div class="row">';
+  ['本周', '下周', '下下周'].forEach(function(t, i){
+    h += '<button class="opt' + (edit.weekOffset === i ? ' on' : '') +
+         '" data-k="wo" data-v="' + i + '">' + t + '</button>';
+  });
+  h += '</div>';
+
+  h += '<div class="lbl">星期</div><div class="row">';
+  for (var d = 1; d <= 7; d++){
+    h += '<button class="opt' + (edit.toDay === d ? ' on' : '') +
+         '" data-k="day" data-v="' + d + '">' + DAY_NAMES[d] + '</button>';
+  }
+  h += '</div>';
+
+  h += '<div class="lbl">第几大节</div><div class="row">';
+  for (var n = 1; n <= 6; n++){
+    var sp = (n - 1) * 2 + 1;
+    h += '<button class="opt' + (edit.toPeriod === sp ? ' on' : '') +
+         '" data-k="p" data-v="' + sp + '">' + n + '</button>';
+  }
+  h += '</div>';
+
+  h += '<div class="sub preview" style="margin:0 0 12px">→ ' +
+       (valid ? ('第 ' + tw + ' 周 ' + DAY_NAMES[edit.toDay] + ' ' +
+                 (DATA.periodTimes[String(edit.toPeriod)] || '') + '–' +
+                 (DATA.periodEnd[String(endP)] || '') + '（第 ' + edit.toPeriod + '-' + endP + ' 节）')
+              : '超出学期范围') +
+       (noop ? '　·　与原时间相同' : '') + '</div>';
+
+  h += '<div class="acts">';
+  h += '<button class="ghostbtn" data-k="back">← 返回</button>';
+  if (edit.exists){
+    h += '<button class="danger" data-k="undo">撤销调课</button>';
+  } else {
+    h += '<button class="danger" data-k="cancel">本次停课</button>';
+  }
+  h += '<button class="primary" data-k="ok"' + (valid && !noop ? '' : ' disabled style="opacity:.5"') +
+       '>确认调课</button>';
+  h += '</div>';
+
+  sheetEl.innerHTML = h;
+}
+
+function saveException(obj){
+  OV = OV.filter(function(o){
+    return !(o.name === obj.name && o.fromDate === obj.fromDate && o.fromPeriod === obj.fromPeriod);
+  });
+  if (obj) OV.push(obj);
+  saveOv();
+  closeSheet();
+  refresh();
+}
+
+sheetEl.onclick = function(e){
+  var t = e.target.closest ? e.target.closest('[data-k]') : null;
+  if (!t) return;
+  var k = t.getAttribute('data-k');
+  var v = t.getAttribute('data-v');
+  if (k === 'wo'){ edit.weekOffset = +v; renderSheet(); }
+  else if (k === 'day'){ edit.toDay = +v; renderSheet(); }
+  else if (k === 'p'){ edit.toPeriod = +v; renderSheet(); }
+  else if (k === 'close'){ closeSheet(); }
+  else if (k === 'tomove'){ sheetMode = 'move'; renderSheet(); }
+  else if (k === 'back'){ sheetMode = 'detail'; renderSheet(); }
+  else if (k === 'undo'){
+    var o = edit.exists;
+    if (!o){ closeSheet(); return; }
+    OV = OV.filter(function(x){
+      return !(x.name === o.name && x.fromDate === o.fromDate && x.fromPeriod === o.fromPeriod);
+    });
+    saveOv(); closeSheet(); refresh();
+  }
+  else if (k === 'cancel'){
+    saveException({ name: edit.name, fromDate: edit.date, fromPeriod: edit.period,
+                    span: edit.span, type: 'cancel',
+                    teacher: edit.teacher, location: edit.location, room: edit.room });
+  }
+  else if (k === 'ok'){
+    var tw = edit.week + edit.weekOffset;
+    if (tw < 1 || tw > DATA.maxWeek) return;
+    saveException({ name: edit.name, fromDate: edit.date, fromPeriod: edit.period,
+                    span: edit.span, type: 'move',
+                    toDate: isoOf(dateOfWeekDay(tw, edit.toDay)), toPeriod: edit.toPeriod,
+                    teacher: edit.teacher, location: edit.location, room: edit.room });
+  }
+};
+/* 手机上点课程会延迟约 300ms 才派发 click，那时遮罩已经盖上来，
+   于是这次点击落到遮罩上、面板刚开就关——看着就是"闪一下"。
+   记下按下时遮罩是否已经存在，只有确实按在遮罩上才关。 */
+var _scrimArmed = false;
+scrimEl.addEventListener('pointerdown', function(){ _scrimArmed = scrimEl.classList.contains('show'); });
+scrimEl.addEventListener('touchstart', function(){ _scrimArmed = scrimEl.classList.contains('show'); }, {passive:true});
+scrimEl.onclick = function(e){
+  if (!_scrimArmed) { _scrimArmed = false; return; }
+  _scrimArmed = false;
+  closeSheet();
+};
+sheetEl.addEventListener('click', function(e){
+  if (e.target.closest('button, input, [data-k]')) return;
+  closeSheet();
+});
+$('#ovclear').onclick = function(){
+  if (!OV.length) return;
+  if (!confirm('撤销全部 ' + OV.length + ' 处调课？')) return;
+  OV = []; saveOv(); refresh();
+};
+
+/* ---------- 鼠标聚焦：行列淡出 + 交叉标记 + 轻微透视 ---------- */
+(function(){
+  var grid = $('#grid');
+
+  function clearFocus(){
+    if (!grid.classList.contains('focus')) return;
+    grid.classList.remove('focus');
+    grid.removeAttribute('data-col');
+    grid.removeAttribute('data-row');
+    grid.style.transform = '';
+    var x = grid.querySelector('.xmark');
+    if (x) x.classList.remove('on');
+    var p = grid.querySelector('.cell.xcell');
+    if (p) p.classList.remove('xcell');
+  }
+
+  grid.addEventListener('pointermove', function(e){
+    if (e.pointerType === 'touch') return;      // 手机上没有 hover，别做无用功
+    var el = e.target.closest ? e.target.closest('[data-c]') : null;
+    if (!el){ clearFocus(); return; }
+
+    /* 透视角度很小，只为让整张表像一张被手指按住的纸，幅度大了会晕 */
+    var rect = grid.getBoundingClientRect();
+    var nx = (e.clientX - rect.left) / rect.width - .5;
+    var ny = (e.clientY - rect.top) / rect.height - .5;
+    grid.style.transform = 'perspective(1100px) rotateX(' + (-ny * 1.2).toFixed(2)
+                         + 'deg) rotateY(' + (nx * 1.2).toFixed(2) + 'deg)';
+
+    var c = el.dataset.c || '', r = el.dataset.r || '';
+    if (!c) return clearFocus();
+    if (grid.dataset.col === c && grid.dataset.row === r) return;
+
+    grid.dataset.col = c;
+    grid.dataset.row = r;
+    grid.classList.add('focus');
+
+    var prev = grid.querySelector('.cell.xcell');
+    if (prev) prev.classList.remove('xcell');
+    var xm = grid.querySelector('.xmark');
+    var target = r ? grid.querySelector('.cell[data-c="' + c + '"][data-r="' + r + '"]') : null;
+    if (target && xm){
+      target.classList.add('xcell');
+      xm.style.left = target.offsetLeft + 'px';
+      xm.style.top = target.offsetTop + 'px';
+      xm.classList.add('on');
+    } else if (xm){
+      xm.classList.remove('on');
+    }
+  });
+
+  grid.addEventListener('pointerleave', clearFocus);
+})();
+
+document.addEventListener('keydown', function(e){
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  if (e.key === 'Escape'){ closeSheet(); return; }
+  if (sheetEl.classList.contains('show')) return;
+  if (e.key === 'ArrowLeft'){
+    e.preventDefault();
+    showWeek(Math.max(1, (curWeek || 1) - 1), true);
+  } else if (e.key === 'ArrowRight'){
+    e.preventDefault();
+    showWeek(Math.min(DATA.maxWeek, (curWeek || 1) + 1), true);
+  } else if (e.key === 'Home'){
+    e.preventDefault();
+    showWeek(clampWeek(weekOfDate(NOW)), true);
+  }
+});
+
+$('#prev').onclick = function(){ showWeek(Math.max(1, (curWeek || 1) - 1), true); };
+$('#next').onclick = function(){ showWeek(Math.min(DATA.maxWeek, (curWeek || 1) + 1), true); };
+$('#thisWeek').onclick = function(){ showWeek(clampWeek(weekOfDate(NOW)), true); };
+$('#ask').onclick = function(){ ask($('#q').value); };
+$('#q').addEventListener('keydown', function(e){ if (e.key === 'Enter') ask($('#q').value); });
+document.querySelectorAll('.chip').forEach(function(c){
+  c.onclick = function(){ $('#q').value = c.textContent; ask(c.textContent); };
+});
+$('#ics').onclick = function(){
+  var blob = new Blob([buildICS()], { type: 'text/calendar;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '我的课表.ics';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+};
+
+$('#cls').textContent = DATA.meta.className || '课表';
+var cw = weekOfDate(NOW);
+$('#sub').textContent = (DATA.meta.student || '') + ' · 今天' + DAY_NAMES[NOW.getDay() || 7]
+  + ' · 第 ' + clampWeek(cw) + ' 周';
+buildWeekTicks();
+showWeek(clampWeek(cw), true);
+updateOvbar();
+
+var preset = (location.search.match(/[?&]q=([^&]*)/) || [])[1];
+if (preset){
+  preset = decodeURIComponent(preset);
+  $('#q').value = preset;
+  ask(preset);
+}
+</script>
+</body>
+</html>
