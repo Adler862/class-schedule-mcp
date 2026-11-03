@@ -39,7 +39,8 @@ except Exception as e:
     print('auto smooth unavailable:', type(e).__name__)
 
 body.select_set(True)
-out = 'D:/WorkBuddy_cache/2026-10-31-20-54-55/class-schedule-web/web3d/models/spine.glb'
+import os as _os
+out = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'spine.glb')
 bpy.ops.export_scene.gltf(
     filepath=out, export_format='GLB', use_selection=True,
     export_apply=True, export_yup=True,

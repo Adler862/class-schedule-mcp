@@ -13,3 +13,10 @@ config/overrides.json.tmp
 
 # 3D 页的构建依赖（three / esbuild），不提交
 web3d/node_modules/
+
+# 教务系统导出的真实课表（含姓名、学号、教师全名），只在本地
+config/mine.json
+config/mine-courses.json
+
+# 本地 MCP 客户端配置，含本机绝对路径
+cherry-mcp.json
