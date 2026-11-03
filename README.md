@@ -2,7 +2,7 @@
 
 把「今日课表 / 下一节课 / 本周课表」和「多源热点新闻 / 每日早报」封装成一个
 [MCP](https://modelcontextprotocol.io)（stdio）服务，供任何支持 MCP 的客户端调用；
-课表还能渲染成深色主题周课表图片，并通过微信通道直接推送。
+课表还能渲染成周课表图片（与网页版同一套米白配色），并通过微信通道直接推送。
 
 > 这是一个个人项目：数据源全部是公开接口，微信推送走的是个人通道，**仅供学习与自用**。
 
@@ -19,7 +19,7 @@
 | `get_today_schedule` | 指定日期的文字课表（含上课状态、明日预告） |
 | `get_next_course` | 下一节课 + 倒计时 |
 | `get_week_schedule` | 本周课表总览 |
-| `get_schedule_image` | 渲染深色主题周课表 PNG（返回图片内容） |
+| `get_schedule_image` | 渲染周课表 PNG（米白极简风，参数可指定本周/下周） |
 | `send_schedule_image_to_wechat` | 渲染并直推图片到微信 |
 | `get_hot_news` | 今日热点新闻（按板块配额排序，附近期气候趋势） |
 | `get_weather_climate` | 未来 7 天温度区间 / 天气概况 / 降水天数 / 升降趋势 |
