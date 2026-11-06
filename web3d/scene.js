@@ -757,6 +757,48 @@ addEventListener('keydown', (ev) => {
   else if (k === 'Home') { select(currentWeek() - 1); ev.preventDefault(); }
 });
 
+/* ---------- 滚轮切周 ----------
+   档案架本来只能靠方向键和点击换周，鼠标用户得先找到右下角那排键位。
+   滚轮直接映射成「下一根 / 上一根档案」，和键盘同一条 select() 路径，
+   所以面板开着时内容、引线、周次带都会一起跟着换。
+
+   为什么不是 deltaY 一冒头就翻：触控板惯性一次手势会连发几十个 wheel，
+   不攒阈值 + 冷却会一口气冲过好几周。攒到 WHEEL_STEP 才走一格，
+   两格之间至少隔 WHEEL_COOLDOWN，手势停了 WHEEL_IDLE 就把余量清零。
+
+   抽出某一周的课表纸时（sheetOpen）滚轮同样切周：select() 会顺带调
+   openWeekSheet(nextWeek)，把纸上的周次、日期和课程一起换成新一周。
+   只有真正能滚的表格容器（.tbody / .twrap，窄屏才出现）才把滚轮还给它；
+   Ctrl+滚轮是浏览器缩放，横向滑动也不算切周。3D 轨道是环形的，
+   首尾沿用 select() 的循环语义，和键盘保持一致。 */
+const WHEEL_STEP = 48;
+const WHEEL_COOLDOWN = 240;
+const WHEEL_IDLE = 200;
+let wheelAccum = 0;
+let wheelLastFlip = 0;
+let wheelIdleTimer = 0;
+
+addEventListener('wheel', (ev) => {
+  if (ev.ctrlKey) return;
+  if (ev.target && ev.target.closest && ev.target.closest('.tbody, .twrap')) return;
+  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;
+  ev.preventDefault();
+
+  clearTimeout(wheelIdleTimer);
+  wheelIdleTimer = setTimeout(() => { wheelAccum = 0; }, WHEEL_IDLE);
+
+  // deltaMode: 0=像素 1=行 2=页，统一折成像素，鼠标和触控板才不会差十几倍
+  const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 400 : 1;
+  wheelAccum += ev.deltaY * unit;
+
+  const now = performance.now();
+  if (Math.abs(wheelAccum) < WHEEL_STEP || now - wheelLastFlip < WHEEL_COOLDOWN) return;
+  const dir = wheelAccum > 0 ? 1 : -1;
+  wheelAccum = 0;
+  wheelLastFlip = now;
+  select(selected + dir);
+}, { passive: false });
+
 /* ---------- 覆盖层 ----------
    每次用的时候现取元素：脚本可能在覆盖层解析完成前就跑到这里，
    缓存下来的引用会一直是 null。 */

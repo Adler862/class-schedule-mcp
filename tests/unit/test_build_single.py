@@ -9,6 +9,7 @@
 import os
 import sys
 import json
+import re
 import tempfile
 import datetime
 import unittest
@@ -177,7 +178,26 @@ class PagesArtifactTest(unittest.TestCase):
             semester._cache.clear()
             bs._cli.link_3d = saved_link
 
-        if actual != expected:
-            self.fail('docs/index.html 与当前代码构建结果不一致。\n'
+        # DATA 里有几个字段跟「构建当天」绑定（meta.today / currentWeek / weekday，
+        # 以及 --date 演示模式写的顶层 today）。这些每天都会变，直接比整串会让
+        # 这条测试在构建次日开始无条件失败。真正要锁住的是：页面代码由模板生成、
+        # 且课表数据与当前配置一致——把日期字段单独剔除后再严格比对。
+        def strip_data(html):
+            return re.sub(r'^var DATA = .*;$', 'var DATA = <BLOB>;',
+                          html.replace('\r\n', '\n'), flags=re.M)
+
+        def data_of(html):
+            m = re.search(r'^var DATA = (.*);$', html.replace('\r\n', '\n'), re.M)
+            return json.loads(m.group(1))
+
+        if strip_data(actual) != strip_data(expected):
+            self.fail('docs/index.html 的页面代码与模板/构建结果不一致。\n'
                       '重新生成：python tools/build_single.py '
                       '--courses config/demo-courses.json --out docs/index.html')
+
+        a, e = data_of(actual), data_of(expected)
+        for obj in (a, e):
+            for k in ('today', 'currentWeek', 'weekday'):
+                obj.get('meta', {}).pop(k, None)
+            obj.pop('today', None)          # 顶层：正常构建是 null，--date 演示才有值
+        self.assertEqual(a, e, 'docs/index.html 的课表数据与当前配置不一致（已忽略日期字段）')

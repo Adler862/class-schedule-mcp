@@ -1,0 +1,12 @@
+{
+  "name": "class-schedule-drag-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "真实浏览器里的拖拽调课回归测试（Playwright Core 驱动本机 Edge，不下载 Chromium）",
+  "scripts": {
+    "test": "node drag-move.spec.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}
