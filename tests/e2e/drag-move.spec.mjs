@@ -195,6 +195,7 @@ await run('回归：调课状态栏在课表下方，课表 top/height 不位移
   assert.ok(Math.abs(after.top - layout.top) < 1, `课表 top 不该变：${layout.top} → ${after.top}`);
   assert.ok(Math.abs(after.height - layout.height) < 1,
     `课表高度不该变：${layout.height} → ${after.height}`);
+  await page.screenshot({ path: path.join(ARTIFACTS, 'desktop-after-move.png') });
 });
 
 /* ---------- 2d. 回归：无动画切周清掉旧定时器，不二次重绘 ---------- */
@@ -442,7 +443,43 @@ await run('手机 390x844：触摸长按拾起、横滑被锁、截图', async (
   await page.screenshot({ path: path.join(ARTIFACTS, 'mobile.png') });
 }, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
-/* ---------- 17~20. 3D 档案架：滚轮切周 ---------- */
+/* ---------- 17~19. 明暗主题：跟随系统 → 深色 → 浅色 ---------- */
+await run('明暗主题：跟随系统 → 深色 → 浅色 → 跟随系统', async ({ page }) => {
+  const mode = p => p.evaluate(() => document.documentElement.dataset.theme);
+  const bg = p => p.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  assert.equal(await mode(page), 'auto', '默认应跟随系统');
+  const before = await bg(page);
+  await page.locator('#themeBtn').click();
+  assert.equal(await mode(page), 'dark', '第一下应该直接给深色');
+  assert.equal(await bg(page), 'rgb(21, 23, 19)', '深色背景');
+  await sleep(320);                                // 等 .cell 的 220ms 背景过渡走完
+  const cellBg = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('.cell')).backgroundColor);
+  assert.equal(cellBg, 'rgb(29, 31, 26)', '格子也应切到深色 surface');
+  await page.screenshot({ path: path.join(ARTIFACTS, 'desktop-dark.png') });
+  await page.locator('#themeBtn').click();
+  assert.equal(await mode(page), 'light', '第二下到强制浅色');
+  assert.equal(await bg(page), 'rgb(232, 229, 225)', '浅色背景');
+  await page.locator('#themeBtn').click();
+  assert.equal(await mode(page), 'auto', '第三下回到跟随系统');
+  assert.equal(await bg(page), before, '回到跟随系统应恢复系统背景');
+});
+
+await run('明暗主题：选择会记住、按钮不显眼', async ({ page }) => {
+  const box = await page.locator('#themeBtn').boundingBox();
+  assert.ok(box.width <= 28 && box.height <= 28, `按钮要小：${box.width}x${box.height}`);
+  const op = await page.locator('#themeBtn').evaluate(el => Number(getComputedStyle(el).opacity));
+  assert.ok(op <= 0.6, `按钮不该太显眼：opacity ${op}`);
+  await page.locator('#themeBtn').click();          // → dark
+  await page.reload();
+  await page.waitForSelector('#grid .course');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark',
+    '刷新后应保持深色');
+  assert.equal(await page.locator('#themeBtn').getAttribute('aria-label'),
+    '主题：深色（点击切换）');
+});
+
+/* ---------- 20~24. 3D 档案架：滚轮切周 ---------- */
 await run('3D：滚轮向下切到下一周', async ({ page }) => {
   const before = await week3d(page);
   assert.ok(before, '应能读到当前周次');
@@ -483,13 +520,27 @@ await run('3D：触控板惯性一次手势最多翻一周', async ({ page }) =>
     '一次手势只该翻一周（累积到 48 翻一格，240ms 冷却内不再翻）');
 }, {}, '/docs/3d.html');
 
-await run('3D：课表面板展开时滚轮不抢切周', async ({ page }) => {
+await run('3D：抽出课表纸后滚轮同样切周', async ({ page }) => {
+  assert.match(await page.evaluate(() => document.body.className), /sheet-open/,
+    '前置条件：应处于抽出课表纸的状态');
   const before = await week3d(page);
   await page.mouse.move(720, 450);
   await page.mouse.wheel(0, 120);
-  await sleep(350);
-  assert.equal(await week3d(page), before, '面板内的滚轮应留给表格滚动');
+  await page.waitForFunction(b => {
+    const m = /第\s*(\d+)\s*周/.exec(document.getElementById('slotName').textContent);
+    return m && Number(m[1]) !== b;
+  }, before, { timeout: 2000 });
+  assert.equal(await week3d(page), before + 1, '纸面上滚轮也应切到下一周');
+  assert.match(await page.locator('#wsFile').textContent(), /W-11/,
+    '纸上的档案编号也要跟着换');
+  assert.match(await page.evaluate(() => document.body.className), /sheet-open/,
+    '切周后课表纸应保持展开');
+  await page.screenshot({ path: path.join(ARTIFACTS, '3d-paper-after-wheel.png') });
 }, {}, '/docs/3d.html?w=10');
+
+await run('3D：保持自己的印刷配色，不引入 2D 主题按钮', async ({ page }) => {
+  assert.equal(await page.locator('#themeBtn').count(), 0);
+}, {}, '/docs/3d.html');
 
 await browser.close();
 server.close();

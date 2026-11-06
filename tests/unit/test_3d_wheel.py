@@ -29,10 +29,17 @@ class WheelWeekTest(unittest.TestCase):
         self.assertIn('select(selected + dir)', s)
         self.assertIn('{ passive: false }', s, '要 preventDefault 就必须非 passive')
 
-    def test_wheel_does_not_hijack_sheet_and_zoom(self):
-        """面板里的表格要能自己滚，Ctrl+滚轮是浏览器缩放，横向滑动不算切周。"""
+    def test_wheel_works_in_rack_and_on_the_pulled_out_sheet(self):
+        """档案架态和抽出课表纸态都要能滚；select() 会顺带换纸上的内容。"""
         s = read(SCENE)
-        self.assertIn('if (sheetOpen || ev.ctrlKey) return;', s)
+        self.assertIn('if (ev.ctrlKey) return;', s)
+        self.assertNotIn('if (sheetOpen || ev.ctrlKey) return;', s,
+                          '不能用 sheetOpen 把滚轮挡在课表纸外面')
+        self.assertIn('if (sheetOpen && nextWeek !== lastSheetWeek) openWeekSheet(nextWeek);', s)
+
+    def test_wheel_does_not_hijack_scrollable_table_or_zoom(self):
+        """能滚的表格容器要留给它自己，Ctrl+滚轮是浏览器缩放，横滑不算切周。"""
+        s = read(SCENE)
         self.assertIn(".tbody, .twrap", s)
         self.assertIn('Math.abs(ev.deltaX) > Math.abs(ev.deltaY)', s)
         self.assertIn('ev.deltaMode', s, '行/页模式的 deltaY 要折算成像素')

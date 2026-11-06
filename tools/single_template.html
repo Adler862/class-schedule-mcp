@@ -20,6 +20,21 @@
       --accent:#c09a63; --selected:#504b41; --on-ink:#151713;
     }
   }
+  /* 手动主题：__THEME__ 三态里的 light / dark 是显式覆盖，
+     必须写在媒体查询之后，且 html[data-theme] 的特异性高于 :root。
+     auto 时不写覆盖，继续由系统偏好决定。 */
+  html[data-theme="light"]{
+    color-scheme:light;
+    --bg:#e8e5e1; --surface:#efedea; --fg:#151713; --muted:#6f6c64;
+    --faint:#8f8a80; --line:#bdb8ad; --line-strong:#504b41;
+    --accent:#a67d48; --selected:#cbb397; --on-ink:#e8e5e1;
+  }
+  html[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#151713; --surface:#1d1f1a; --fg:#e8e5e1; --muted:#9a968c;
+    --faint:#77766d; --line:#3a3c34; --line-strong:#77766d;
+    --accent:#c09a63; --selected:#504b41; --on-ink:#151713;
+  }
   *{box-sizing:border-box;border-radius:0;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
   html{background:var(--bg)}
@@ -59,6 +74,24 @@
   }
   .ghost svg{width:16px;height:16px;flex:none}
   .ghost:hover{background:var(--fg);color:var(--bg)}
+  /* 主题按钮：故意做小、半透明、无边框，hover 才亮起来，不抢课表的视线 */
+  .headacts{display:flex;align-items:center;gap:10px;justify-self:end}
+  .themebtn{
+    display:grid;place-items:center;width:26px;height:26px;padding:0;
+    border:1px solid transparent;background:transparent;color:var(--muted);
+    opacity:.55;cursor:pointer;
+    transition:opacity .15s linear, color .15s linear, border-color .15s linear;
+  }
+  .themebtn:hover{opacity:1;color:var(--fg);border-color:var(--line)}
+  .themebtn:focus-visible{opacity:1;outline:1px solid var(--accent);outline-offset:3px}
+  .themebtn svg{width:15px;height:15px;display:none}
+  html[data-theme="auto"]  .themebtn .i-auto,
+  html[data-theme="dark"]  .themebtn .i-dark,
+  html[data-theme="light"] .themebtn .i-light{display:block}
+  @media (max-width:600px){
+    .headacts{gap:6px}
+    .themebtn{width:24px;height:24px}
+  }
   .weekbar{display:flex;align-items:center;gap:8px;margin:0 0 12px}
   #thisWeek{margin-left:auto;min-height:34px;padding:6px 12px;font-size:11px;letter-spacing:1.7px}
   .nav{
@@ -547,6 +580,17 @@
     .toast,.edge-zone,.drag-ghost.bounce{animation:none;transition:none}
   }
 </style>
+<script>
+/* 主题必须在首帧之前定下来，否则选了深色的用户会先闪一下白。
+   这段只做一件事：把 localStorage 里的选择写到 <html data-theme> 上，
+   剩下的变量覆盖全交给 CSS（auto 时不覆盖，继续跟随系统）。 */
+(function(){
+  var m = 'auto';
+  try { var v = localStorage.getItem('kebiao-theme-v1');
+        if (v === 'dark' || v === 'light') m = v; } catch (e) {}
+  document.documentElement.dataset.theme = m;
+})();
+</script>
 </head>
 <body>
 
@@ -561,10 +605,27 @@
     <p class="catalogue">TIMETABLE · 2026-2027-1</p>
     <p id="sub">加载中…</p>
   </div>
-  <button class="ghost" id="ics">
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 3v3M15 3v3M3 7h14M4 4h12v13H4z" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"/></svg>
-    存进日历
-  </button>
+  <div class="headacts">
+    <button class="themebtn" id="themeBtn" type="button"
+            aria-label="主题：跟随系统（点击切换）" title="主题：跟随系统（点击切换）">
+      <svg class="i-auto" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M8 2a6 6 0 0 0 0 12z" fill="currentColor"/>
+      </svg>
+      <svg class="i-dark" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M12.8 10.2A5.4 5.4 0 0 1 6.2 3.6a5.5 5.5 0 1 0 6.6 6.6z" fill="currentColor"/>
+      </svg>
+      <svg class="i-light" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M12.9 3.1l-1.4 1.4M4.5 11.5l-1.4 1.4"
+              fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <button class="ghost" id="ics">
+      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 3v3M15 3v3M3 7h14M4 4h12v13H4z" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"/></svg>
+      存进日历
+    </button>
+  </div>
 </header>
 
 <div class="weekbar">
@@ -1894,6 +1955,45 @@ window.__dragProbe = {
   ov:function(){ return OV.slice(); },
   weeks:function(){ return {cur:curWeek, max:DATA.maxWeek}; }
 };
+
+/* ---------- 明暗主题：跟随系统 → 深色 → 浅色 ----------
+   __THEME__  顺序是刻意的：多数人默认就是浅色，第一次点击应该直接给深色，
+   再点才到「强制浅色」，第三下回到跟随系统。CSS 变量覆盖写在 <head>，
+   这里只负责状态、图标语义、移动端浏览器工具栏颜色和持久化。 */
+var THEME_KEY = 'kebiao-theme-v1';
+var THEME_ORDER = ['auto', 'dark', 'light'];
+var THEME_LABEL = {auto:'跟随系统', dark:'深色', light:'浅色'};
+function themeMode(){
+  try {
+    var v = localStorage.getItem(THEME_KEY);
+    if (v === 'dark' || v === 'light') return v;
+  } catch (e) {}
+  return 'auto';
+}
+function applyTheme(mode){
+  document.documentElement.dataset.theme = mode;
+  var txt = '主题：' + THEME_LABEL[mode] + '（点击切换）';
+  var btn = $('#themeBtn');
+  if (btn){ btn.setAttribute('aria-label', txt); btn.title = txt; }
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta){
+    var sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var dark = mode === 'dark' || (mode === 'auto' && sysDark);
+    meta.setAttribute('content', dark ? '#151713' : '#e8e5e1');
+  }
+  try { localStorage.setItem(THEME_KEY, mode); } catch (e) {}
+}
+$('#themeBtn').onclick = function(){
+  var i = THEME_ORDER.indexOf(themeMode());
+  applyTheme(THEME_ORDER[(i + 1) % THEME_ORDER.length]);
+};
+if (window.matchMedia){
+  var _sysTheme = window.matchMedia('(prefers-color-scheme: dark)');
+  var _onSysTheme = function(){ if (themeMode() === 'auto') applyTheme('auto'); };
+  if (_sysTheme.addEventListener) _sysTheme.addEventListener('change', _onSysTheme);
+  else if (_sysTheme.addListener) _sysTheme.addListener(_onSysTheme);
+}
+applyTheme(document.documentElement.dataset.theme || 'auto');
 
 $('#cls').textContent = DATA.meta.className || '课表';
 var cw = weekOfDate(NOW);
