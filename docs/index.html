@@ -503,6 +503,51 @@
   @media (max-width:860px){ .to3d{position:static;transform:none;flex-direction:row;
     align-items:center;gap:8px;margin:0 0 14px;padding:10px 14px}
     .to3d b{font-size:20px} .to3d i{margin:0} }
+  /* ---------- 拖拽调课 ----------
+     __DRAG_MOVE__  单文件页由 tools/single_template.html 生成，功能改动必须落在这里。 */
+  /* 鼠标按住拖过课程卡会顺手选中里面的文字（整片蓝），
+     touch-action 只管触摸手势、管不了选区，必须单独禁。 */
+  .course{touch-action:none;user-select:none;-webkit-user-select:none}
+  body.dragging{user-select:none;-webkit-user-select:none}
+  .course.picked{opacity:.26}
+  .drag-ghost{
+    position:fixed;z-index:70;margin:0;pointer-events:none;
+    transform-origin:center center;box-shadow:0 16px 38px rgba(0,0,0,.28);
+    opacity:.96;transition:none;
+  }
+  .drag-ghost.bounce{transition:transform 190ms var(--ease), opacity 190ms linear;opacity:0}
+  body.dragging{cursor:grabbing}
+  body.dragging .course:not(.picked):not(.drag-ghost){animation:jiggle .22s ease-in-out infinite alternate}
+  @keyframes jiggle{from{transform:rotate(-.35deg)}to{transform:rotate(.35deg)}}
+  .cell.drop-ok{background:var(--selected);box-shadow:inset 0 0 0 2px var(--accent)}
+  .cell.drop-swap{background:var(--selected);box-shadow:inset 0 0 0 2px var(--fg)}
+  .cell.drop-bad{box-shadow:inset 0 0 0 2px var(--line-strong);opacity:.6}
+  .edge-zone{
+    position:fixed;z-index:66;pointer-events:none;opacity:0;
+    border:1px dashed var(--accent);background:rgba(166,125,72,.09);
+    transition:opacity 140ms linear, background-color 140ms linear;
+  }
+  .edge-zone.show{opacity:.42}
+  .edge-zone.hot{opacity:1;background:rgba(166,125,72,.2)}
+  .edge-zone.dead{opacity:.5;border-color:var(--muted);background:transparent}
+  .grid-frame.slide-next{animation:drag-slide-next 200ms var(--ease)}
+  .grid-frame.slide-prev{animation:drag-slide-prev 200ms var(--ease)}
+  @keyframes drag-slide-next{from{transform:translateX(22px);opacity:.55}to{transform:none;opacity:1}}
+  @keyframes drag-slide-prev{from{transform:translateX(-22px);opacity:.55}to{transform:none;opacity:1}}
+  .toast{
+    position:fixed;left:50%;bottom:26px;z-index:80;transform:translateX(-50%) translateY(14px);
+    display:flex;align-items:center;gap:14px;max-width:min(520px,calc(100vw - 32px));
+    padding:10px 14px;border:1px solid var(--line-strong);background:var(--surface);
+    color:var(--fg);font-size:11px;line-height:1.6;letter-spacing:.04em;
+    opacity:0;pointer-events:none;transition:opacity 180ms linear, transform 180ms var(--ease);
+  }
+  .toast.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+  .toast .tx{flex:1}
+  .toast button{border:0;background:transparent;color:var(--accent);font-size:11px;cursor:pointer;padding:2px 4px;white-space:nowrap}
+  @media (prefers-reduced-motion:reduce){
+    body.dragging .course:not(.picked):not(.drag-ghost){animation:none}
+    .grid-frame.slide-next,.grid-frame.slide-prev,.toast,.edge-zone,.drag-ghost.bounce{animation:none;transition:none}
+  }
 </style>
 </head>
 <body>
@@ -565,6 +610,9 @@
   <div class="answer" id="answer"></div>
 </div>
 
+<div class="edge-zone" id="edgeL" aria-hidden="true"></div>
+<div class="edge-zone" id="edgeR" aria-hidden="true"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet"></div>
 
@@ -575,7 +623,7 @@
 </footer>
 
 <script>
-var DATA = {"meta":{"student":"示例大学 xxx 学生个人课表","className":"示例班级","semesterStart":"2026-08-31","today":"2026-11-06","currentWeek":10,"weekday":"周五","totalCourses":20,"periodTimes":{"1":"08:30","2":"09:25","3":"10:30","4":"11:25","5":"14:30","6":"15:25","7":"16:30","8":"17:25","9":"19:00","10":"19:55","11":"21:00","12":"21:55"},"periodEnd":{"1":"09:15","2":"10:10","3":"11:15","4":"12:10","5":"15:15","6":"16:10","7":"17:15","8":"18:10","9":"19:45","10":"20:40","11":"21:45","12":"22:40"},"palette":{"编译原理":0,"算法设计与分析":1,"移动应用开发":2,"计算机组成原理":3,"大学生就业指导":4,"操作系统":5,"计算机仿真":6,"人工智能基础":7,"专业英语":8,"计算机组成原理实验":9}},"start":"2026-08-31","today":"2026-11-05","maxWeek":17,"palette":{"编译原理":0,"算法设计与分析":1,"移动应用开发":2,"计算机组成原理":3,"大学生就业指导":4,"操作系统":5,"计算机仿真":6,"人工智能基础":7,"专业英语":8,"计算机组成原理实验":9},"periodTimes":{"1":"08:30","2":"09:25","3":"10:30","4":"11:25","5":"14:30","6":"15:25","7":"16:30","8":"17:25","9":"19:00","10":"19:55","11":"21:00","12":"21:55"},"periodEnd":{"1":"09:15","2":"10:10","3":"11:15","4":"12:10","5":"15:15","6":"16:10","7":"17:15","8":"18:10","9":"19:45","10":"20:40","11":"21:45","12":"22:40"},"courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","day":1,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","day":2,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","day":3,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","day":5,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","day":2,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,4,6,8,10,12,14,16]},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼210","day":3,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[4]},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","day":3,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","day":4,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,4,6]},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","day":5,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","day":2,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","day":3,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,7,9,10,11,12,13,14,15,16,17]},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","day":4,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","day":1,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","day":2,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","day":3,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","day":4,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南303","day":5,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[9]},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","day":3,"startPeriod":9,"endPeriod":10,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[8,9,10,11,12,13,14]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","day":4,"startPeriod":9,"endPeriod":10,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[7]},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","day":5,"startPeriod":11,"endPeriod":12,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[8,9]}],"weeks":{"1":[{"day":1,"weekday":"周一","date":"2026-08-31","courses":[]},{"day":2,"weekday":"周二","date":"2026-09-01","courses":[]},{"day":3,"weekday":"周三","date":"2026-09-02","courses":[]},{"day":4,"weekday":"周四","date":"2026-09-03","courses":[]},{"day":5,"weekday":"周五","date":"2026-09-04","courses":[]},{"day":6,"weekday":"周六","date":"2026-09-05","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-06","courses":[]}],"2":[{"day":1,"weekday":"周一","date":"2026-09-07","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-08","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-09","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-10","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-11","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-12","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-13","courses":[]}],"3":[{"day":1,"weekday":"周一","date":"2026-09-14","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-15","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-16","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-17","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-18","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-19","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-20","courses":[]}],"4":[{"day":1,"weekday":"周一","date":"2026-09-21","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-22","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-23","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼210","room":"210","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-24","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-25","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-26","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-27","courses":[]}],"5":[{"day":1,"weekday":"周一","date":"2026-09-28","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-29","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-30","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-01","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-02","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-03","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-04","courses":[]}],"6":[{"day":1,"weekday":"周一","date":"2026-10-05","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-06","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-07","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-08","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-09","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-10","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-11","courses":[]}],"7":[{"day":1,"weekday":"周一","date":"2026-10-12","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-13","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-14","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-15","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":4,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-16","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-17","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-18","courses":[]}],"8":[{"day":1,"weekday":"周一","date":"2026-10-19","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-20","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-21","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-10-22","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-23","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":5,"startPeriod":11,"endPeriod":12,"start":"21:00","end":"22:40","note":"分组01"}]},{"day":6,"weekday":"周六","date":"2026-10-24","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-25","courses":[]}],"9":[{"day":1,"weekday":"周一","date":"2026-10-26","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-27","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-28","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-10-29","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-30","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南303","room":"303","day":5,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":5,"startPeriod":11,"endPeriod":12,"start":"21:00","end":"22:40","note":"分组01"}]},{"day":6,"weekday":"周六","date":"2026-10-31","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-01","courses":[]}],"10":[{"day":1,"weekday":"周一","date":"2026-11-02","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-03","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-04","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-05","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-06","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-07","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-08","courses":[]}],"11":[{"day":1,"weekday":"周一","date":"2026-11-09","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-10","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-11","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-12","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-13","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-14","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-15","courses":[]}],"12":[{"day":1,"weekday":"周一","date":"2026-11-16","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-17","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-18","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-19","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-20","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-21","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-22","courses":[]}],"13":[{"day":1,"weekday":"周一","date":"2026-11-23","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-24","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-25","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-26","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-27","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-28","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-29","courses":[]}],"14":[{"day":1,"weekday":"周一","date":"2026-11-30","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-01","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-02","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-12-03","courses":[]},{"day":5,"weekday":"周五","date":"2026-12-04","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-05","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-06","courses":[]}],"15":[{"day":1,"weekday":"周一","date":"2026-12-07","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-08","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-09","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-10","courses":[{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-12-11","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-12","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-13","courses":[]}],"16":[{"day":1,"weekday":"周一","date":"2026-12-14","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-15","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-16","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-17","courses":[]},{"day":5,"weekday":"周五","date":"2026-12-18","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-19","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-20","courses":[]}],"17":[{"day":1,"weekday":"周一","date":"2026-12-21","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-22","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-23","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-24","courses":[{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-12-25","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-26","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-27","courses":[]}]}};
+var DATA = {"meta":{"student":"示例大学 xxx 学生个人课表","className":"示例班级","semesterStart":"2026-08-31","today":"2026-11-06","currentWeek":10,"weekday":"周五","totalCourses":20,"periodTimes":{"1":"08:30","2":"09:25","3":"10:30","4":"11:25","5":"14:30","6":"15:25","7":"16:30","8":"17:25","9":"19:00","10":"19:55","11":"21:00","12":"21:55"},"periodEnd":{"1":"09:15","2":"10:10","3":"11:15","4":"12:10","5":"15:15","6":"16:10","7":"17:15","8":"18:10","9":"19:45","10":"20:40","11":"21:45","12":"22:40"},"palette":{"编译原理":0,"算法设计与分析":1,"移动应用开发":2,"计算机组成原理":3,"大学生就业指导":4,"操作系统":5,"计算机仿真":6,"人工智能基础":7,"专业英语":8,"计算机组成原理实验":9}},"start":"2026-08-31","today":null,"maxWeek":17,"palette":{"编译原理":0,"算法设计与分析":1,"移动应用开发":2,"计算机组成原理":3,"大学生就业指导":4,"操作系统":5,"计算机仿真":6,"人工智能基础":7,"专业英语":8,"计算机组成原理实验":9},"periodTimes":{"1":"08:30","2":"09:25","3":"10:30","4":"11:25","5":"14:30","6":"15:25","7":"16:30","8":"17:25","9":"19:00","10":"19:55","11":"21:00","12":"21:55"},"periodEnd":{"1":"09:15","2":"10:10","3":"11:15","4":"12:10","5":"15:15","6":"16:10","7":"17:15","8":"18:10","9":"19:45","10":"20:40","11":"21:45","12":"22:40"},"courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","day":1,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","day":2,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","day":3,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","day":5,"startPeriod":1,"endPeriod":2,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","day":2,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,4,6,8,10,12,14,16]},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼210","day":3,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[4]},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","day":3,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","day":4,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,4,6]},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","day":5,"startPeriod":3,"endPeriod":4,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","day":2,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","day":3,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,7,9,10,11,12,13,14,15,16,17]},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","day":4,"startPeriod":5,"endPeriod":6,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","day":1,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13]},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","day":2,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","day":3,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","day":4,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[3,5,7,9,11,13,15,17]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南303","day":5,"startPeriod":7,"endPeriod":8,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[9]},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","day":3,"startPeriod":9,"endPeriod":10,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[8,9,10,11,12,13,14]},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","day":4,"startPeriod":9,"endPeriod":10,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[7]},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","day":5,"startPeriod":11,"endPeriod":12,"startWeek":1,"totalWeeks":20,"weekType":"all","weeks":[8,9]}],"weeks":{"1":[{"day":1,"weekday":"周一","date":"2026-08-31","courses":[]},{"day":2,"weekday":"周二","date":"2026-09-01","courses":[]},{"day":3,"weekday":"周三","date":"2026-09-02","courses":[]},{"day":4,"weekday":"周四","date":"2026-09-03","courses":[]},{"day":5,"weekday":"周五","date":"2026-09-04","courses":[]},{"day":6,"weekday":"周六","date":"2026-09-05","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-06","courses":[]}],"2":[{"day":1,"weekday":"周一","date":"2026-09-07","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-08","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-09","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-10","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-11","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-12","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-13","courses":[]}],"3":[{"day":1,"weekday":"周一","date":"2026-09-14","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-15","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-16","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-17","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-18","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-19","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-20","courses":[]}],"4":[{"day":1,"weekday":"周一","date":"2026-09-21","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-22","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-23","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼210","room":"210","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-09-24","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-09-25","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-09-26","courses":[]},{"day":7,"weekday":"周日","date":"2026-09-27","courses":[]}],"5":[{"day":1,"weekday":"周一","date":"2026-09-28","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-09-29","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-09-30","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-01","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-02","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-03","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-04","courses":[]}],"6":[{"day":1,"weekday":"周一","date":"2026-10-05","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-06","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-07","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-08","courses":[{"name":"大学生就业指导","teacher":"曾老师","location":"东校区星瀚楼南207","room":"207","day":4,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-09","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-10","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-11","courses":[]}],"7":[{"day":1,"weekday":"周一","date":"2026-10-12","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-13","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-14","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-10-15","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":4,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-16","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-10-17","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-18","courses":[]}],"8":[{"day":1,"weekday":"周一","date":"2026-10-19","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-20","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-21","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-10-22","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-23","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":5,"startPeriod":11,"endPeriod":12,"start":"21:00","end":"22:40","note":"分组01"}]},{"day":6,"weekday":"周六","date":"2026-10-24","courses":[]},{"day":7,"weekday":"周日","date":"2026-10-25","courses":[]}],"9":[{"day":1,"weekday":"周一","date":"2026-10-26","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-10-27","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-10-28","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-10-29","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-10-30","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南303","room":"303","day":5,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":5,"startPeriod":11,"endPeriod":12,"start":"21:00","end":"22:40","note":"分组01"}]},{"day":6,"weekday":"周六","date":"2026-10-31","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-01","courses":[]}],"10":[{"day":1,"weekday":"周一","date":"2026-11-02","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-03","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-04","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-05","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-06","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-07","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-08","courses":[]}],"11":[{"day":1,"weekday":"周一","date":"2026-11-09","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-10","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-11","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-12","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-13","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-14","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-15","courses":[]}],"12":[{"day":1,"weekday":"周一","date":"2026-11-16","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-17","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-18","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-19","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-20","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-21","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-22","courses":[]}],"13":[{"day":1,"weekday":"周一","date":"2026-11-23","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼209","room":"209","day":1,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-11-24","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-11-25","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-11-26","courses":[{"name":"操作系统","teacher":"姚老师","location":"东校区星瀚楼南308","room":"308","day":4,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-11-27","courses":[{"name":"计算机组成原理","teacher":"焦老师","location":"东校区云海楼210","room":"210","day":5,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"操作系统","teacher":"姚老师","location":"东校区云海楼209","room":"209","day":5,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""}]},{"day":6,"weekday":"周六","date":"2026-11-28","courses":[]},{"day":7,"weekday":"周日","date":"2026-11-29","courses":[]}],"14":[{"day":1,"weekday":"周一","date":"2026-11-30","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-01","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-02","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"计算机组成原理实验","teacher":"焦老师","location":"东校区云海楼421","room":"421","day":3,"startPeriod":9,"endPeriod":10,"start":"19:00","end":"20:40","note":"分组01"}]},{"day":4,"weekday":"周四","date":"2026-12-03","courses":[]},{"day":5,"weekday":"周五","date":"2026-12-04","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-05","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-06","courses":[]}],"15":[{"day":1,"weekday":"周一","date":"2026-12-07","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-08","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-09","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-10","courses":[{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-12-11","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-12","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-13","courses":[]}],"16":[{"day":1,"weekday":"周一","date":"2026-12-14","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-15","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼316","room":"316","day":2,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-16","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-17","courses":[]},{"day":5,"weekday":"周五","date":"2026-12-18","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-19","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-20","courses":[]}],"17":[{"day":1,"weekday":"周一","date":"2026-12-21","courses":[{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼208","room":"208","day":1,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""}]},{"day":2,"weekday":"周二","date":"2026-12-22","courses":[{"name":"算法设计与分析","teacher":"唐老师","location":"东校区云海楼207","room":"207","day":2,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"计算机仿真","teacher":"陈老师","location":"东校区仁智楼A207","room":"A207","day":2,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"专业英语","teacher":"姜老师","location":"东校区云海楼210","room":"210","day":2,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":3,"weekday":"周三","date":"2026-12-23","courses":[{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼209","room":"209","day":3,"startPeriod":1,"endPeriod":2,"start":"08:30","end":"10:10","note":""},{"name":"移动应用开发","teacher":"赵老师","location":"东校区云海楼316","room":"316","day":3,"startPeriod":3,"endPeriod":4,"start":"10:30","end":"12:10","note":""},{"name":"人工智能基础","teacher":"徐老师","location":"东校区星瀚楼南101","room":"101","day":3,"startPeriod":5,"endPeriod":6,"start":"14:30","end":"16:10","note":""},{"name":"编译原理","teacher":"刘老师","location":"东校区云海楼311","room":"311","day":3,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":4,"weekday":"周四","date":"2026-12-24","courses":[{"name":"计算机仿真","teacher":"陈老师","location":"东校区云海楼311","room":"311","day":4,"startPeriod":7,"endPeriod":8,"start":"16:30","end":"18:10","note":""}]},{"day":5,"weekday":"周五","date":"2026-12-25","courses":[]},{"day":6,"weekday":"周六","date":"2026-12-26","courses":[]},{"day":7,"weekday":"周日","date":"2026-12-27","courses":[]}]}};
 
 var $ = function(s){ return document.querySelector(s); };
 /* 色相按黄金角（≈137.5°）从 212° 起散开：任意拿前 N 个都尽量互相远，
@@ -720,6 +768,8 @@ function renderGrid(days){
                    + '<span class="short">' + (c.room || c.location || '') + '</span></div>'
                    + '<div class="tc">' + (c.teacher || '') + '</div>'
                    + '<div class="t">' + (c.start || '') + '</div>';
+      /* 拖拽要拿回原始课程对象（教师/地点/节数），DOM 上只放展示用的字段 */
+      el._c = c; el._d = d;
       el.onclick = (function(course, dayInfo, node){
         return function(){ openSheet(course, dayInfo, node); };
       })(c, d, el);
@@ -1344,6 +1394,7 @@ $('#ovclear').onclick = function(){
   }
 
   grid.addEventListener('pointermove', function(e){
+    if (isDragging()){ clearFocus(); return; }  // 拖拽时别再把网格拧成透视
     if (e.pointerType === 'touch') return;      // 手机上没有 hover，别做无用功
     var el = e.target.closest ? e.target.closest('[data-c]') : null;
     if (!el){ clearFocus(); return; }
@@ -1410,6 +1461,425 @@ $('#ics').onclick = function(){
   a.href = URL.createObjectURL(blob);
   a.download = '我的课表.ics';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+};
+
+/* ---------- 拖拽调课 ----------
+   __DRAG_MOVE__  单文件页由 tools/single_template.html 生成，功能改动必须落在这里。
+
+   手势：触屏长按 220ms / 鼠标位移 8px 才「拾起」；没拾起就是普通点击，
+        详情页照常打开。touch-action:none 必须在手指按下前声明好，否则浏览器
+        会抢去做原生滚动（dnd-kit / SortableJS 都踩过同一个坑）。
+   翻周：拖到网格框「外扩 8–48px」的感应带，停留 500ms 翻一周，按住不放
+        每 800ms 连翻，到 W1/W17 停住。幽灵是挂在 body 上的 fixed 替身，
+        翻周会整块重建 grid，原节点被销毁也不会把替身带走。
+   落位：吸附到大节、保留原节数；目标格有课就两节交换；写进 OV 例外层，
+        源周消失、跨任意周（含过去的周）都成立，且能被「全部撤销」清掉。 */
+var DRAG_CFG = {
+  holdMs:220, mouseDist:8, touchSlop:10,
+  edgeIn:8, edgeOut:48, edgeMin:24, edgePadY:60,
+  dwellMs:500, repeatMs:800, slideMs:200
+};
+var drag = null;
+var _suppressClick = false;
+var _undoSnapshot = null, _toastTimer = null;
+var gridEl = $('#grid'), frameEl = $('#gridFrame');
+var edgeLEl = $('#edgeL'), edgeREl = $('#edgeR'), toastEl = $('#toast');
+
+function zoomOf(){ return parseFloat(getComputedStyle(document.documentElement).zoom) || 1; }
+function isDragging(){ return !!(drag && drag.active); }
+function rectOf(el){
+  var r = el.getBoundingClientRect();
+  return {left:r.left, top:r.top, right:r.right, bottom:r.bottom,
+          width:r.width, height:r.height, x:r.x, y:r.y};
+}
+/* CSS zoom 下 fixed 元素的 left/top 要换算回布局坐标，和 drawOut 用同一套 */
+function fixedBox(el, l, t, w, h){
+  var z = zoomOf();
+  el.style.left = (l / z) + 'px';
+  el.style.top = (t / z) + 'px';
+  el.style.width = (w / z) + 'px';
+  el.style.height = (h / z) + 'px';
+}
+
+/* 感应带：框外 8px 起、48px 止；手机上框边贴着屏幕时钳到屏幕边，
+   并往框内回补到至少 24px 可命中宽度，否则手指根本够不到。 */
+function edgeBands(){
+  var fr = frameEl.getBoundingClientRect();
+  var vw = window.innerWidth;
+  var r0 = Math.max(fr.right - 16, Math.min(fr.right + DRAG_CFG.edgeIn, vw - DRAG_CFG.edgeMin));
+  var r1 = Math.min(fr.right + DRAG_CFG.edgeOut, vw);
+  if (r1 - r0 < DRAG_CFG.edgeMin) r0 = Math.max(0, r1 - DRAG_CFG.edgeMin);
+  var l1 = Math.min(fr.left + 16, Math.max(fr.left - DRAG_CFG.edgeIn, DRAG_CFG.edgeMin));
+  var l0 = Math.max(fr.left - DRAG_CFG.edgeOut, 0);
+  if (l1 - l0 < DRAG_CFG.edgeMin) l1 = Math.min(vw, l0 + DRAG_CFG.edgeMin);
+  return {fr:fr, l:[l0, l1], r:[r0, r1]};
+}
+function paintEdgeZones(){
+  var b = edgeBands();
+  var top = Math.max(0, b.fr.top - 20);
+  var bottom = Math.min(window.innerHeight, b.fr.bottom + 20);
+  var h = Math.max(60, bottom - top);
+  fixedBox(edgeLEl, b.l[0], top, b.l[1] - b.l[0], h);
+  fixedBox(edgeREl, b.r[0], top, b.r[1] - b.r[0], h);
+}
+function showEdgeZones(on){
+  [edgeLEl, edgeREl].forEach(function(el){
+    el.classList.toggle('show', !!on);
+    if (!on) el.classList.remove('hot', 'dead');
+  });
+  if (on) paintEdgeZones();
+}
+function markEdge(dir, dead){
+  edgeLEl.classList.remove('hot', 'dead');
+  edgeREl.classList.remove('hot', 'dead');
+  if (!dir) return;
+  (dir > 0 ? edgeREl : edgeLEl).classList.add(dead ? 'dead' : 'hot');
+}
+function clearEdgeTimers(){
+  if (!drag) return;
+  if (drag.dwellTimer){ clearTimeout(drag.dwellTimer); drag.dwellTimer = null; }
+  if (drag.repeatTimer){ clearInterval(drag.repeatTimer); drag.repeatTimer = null; }
+}
+function slideGrid(dir){
+  var cls = dir > 0 ? 'slide-next' : 'slide-prev';
+  frameEl.classList.remove('slide-next', 'slide-prev');
+  void frameEl.offsetWidth;
+  frameEl.classList.add(cls);
+  setTimeout(function(){ frameEl.classList.remove(cls); }, DRAG_CFG.slideMs + 40);
+}
+function flipWeek(dir){
+  var nw = clampWeek(curWeek + dir);
+  if (nw === curWeek){ clearEdgeTimers(); drag.edgeDead = true; markEdge(dir, true); return; }
+  showWeek(nw, false);              /* 无 swapout 定时器，重绘不会和拖拽打架 */
+  clearTargetMark();
+  drag.target = null;
+  slideGrid(dir);
+  paintEdgeZones();
+  if (clampWeek(nw + dir) === nw){ clearEdgeTimers(); drag.edgeDead = true; markEdge(dir, true); }
+}
+function updateEdge(x, y){
+  if (!drag || !drag.active) return;
+  /* 切周的 swapin 动画会给网格框加 transform，动画期间 getBoundingClientRect
+     是缩放后的视觉坐标。每次移动都重算一次感应带，动画结束瞬间也能对齐。 */
+  paintEdgeZones();
+  var b = edgeBands();
+  var inY = y >= b.fr.top - DRAG_CFG.edgePadY && y <= b.fr.bottom + DRAG_CFG.edgePadY;
+  var dir = 0;
+  if (inY){
+    if (x >= b.r[0] && x <= b.r[1]) dir = 1;
+    else if (x >= b.l[0] && x <= b.l[1]) dir = -1;
+  }
+  var dead = !!dir && ((dir > 0 && curWeek >= DATA.maxWeek) || (dir < 0 && curWeek <= 1));
+  if (dir !== drag.edgeDir || dead !== drag.edgeDead){
+    clearEdgeTimers();
+    drag.edgeDir = dir; drag.edgeDead = dead;
+    if (dir && !dead){
+      (function(d){
+        drag.dwellTimer = setTimeout(function(){
+          if (!drag || !drag.active || drag.edgeDir !== d) return;
+          flipWeek(d);
+          if (drag && drag.active && !drag.edgeDead){
+            drag.repeatTimer = setInterval(function(){
+              if (!drag || !drag.active || drag.edgeDir !== d){ clearEdgeTimers(); return; }
+              flipWeek(d);
+            }, DRAG_CFG.repeatMs);
+          }
+        }, DRAG_CFG.dwellMs);
+      })(dir);
+    }
+  }
+  markEdge(dir, dead);
+  /* 拖拽期间锁住课表横滑，别既滚又翻 */
+  if (frameEl.scrollLeft !== drag.scrollLock) frameEl.scrollLeft = drag.scrollLock;
+}
+
+function clearTargetMark(){
+  gridEl.querySelectorAll('.cell.drop-ok,.cell.drop-swap,.cell.drop-bad')
+    .forEach(function(el){ el.classList.remove('drop-ok', 'drop-swap', 'drop-bad'); });
+}
+function markTarget(t){
+  clearTargetMark();
+  if (!t || !drag) return;
+  var rows = Math.max(1, Math.ceil(drag.span / 2));
+  for (var i = 0; i < rows; i++){
+    var cell = gridEl.querySelector('.cell[data-c="' + t.day + '"][data-r="' + (t.row + i) + '"]');
+    if (!cell) continue;
+    cell.classList.add(!t.valid ? 'drop-bad' : (t.swap ? 'drop-swap' : 'drop-ok'));
+  }
+}
+/* 目标格的住客：按节次区间重叠找，连堂课占两行也算占住。
+   被拖的那节自己要排除，否则多节课程会和自己「交换」。 */
+function occupantOf(date, p0, p1, excludeSig){
+  var days = weekDays(curWeek);
+  if (!days) return null;
+  for (var i = 0; i < days.length; i++){
+    var d = days[i];
+    if (d.date !== date) continue;
+    for (var j = 0; j < d.courses.length; j++){
+      var c = d.courses[j];
+      if ((c.name + '|' + d.date + '|' + c.startPeriod) === excludeSig) continue;
+      if (c.startPeriod <= p1 && c.endPeriod >= p0) return {c:c, date:d.date};
+    }
+  }
+  return null;
+}
+function resolveTarget(x, y){
+  var hit = null;
+  var cells = gridEl.querySelectorAll('.cell[data-c][data-r]');
+  for (var i = 0; i < cells.length; i++){
+    var r = cells[i].getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom){ hit = cells[i]; break; }
+  }
+  if (!hit) return null;                       /* 网格外：取消，不写数据 */
+  var day = +hit.dataset.c, row = +hit.dataset.r;
+  if (!day || !row) return null;
+  var toPeriod = (row - 1) * 2 + 1;
+  var toDate = isoOf(dateOfWeekDay(curWeek, day));
+  var endP = toPeriod + drag.span - 1;
+  var noop = (toDate === drag.d.date && toPeriod === drag.c.startPeriod);
+  var valid = endP <= 12 && !noop;
+  var swap = null;
+  if (valid){
+    swap = occupantOf(toDate, toPeriod, endP,
+      drag.c.name + '|' + drag.d.date + '|' + drag.c.startPeriod);
+  }
+  return {day:day, row:row, toPeriod:toPeriod, toDate:toDate, endP:endP,
+          valid:valid, noop:noop, swap:swap};
+}
+function updateGhost(){
+  if (!drag || !drag.ghost) return;
+  var z = zoomOf();
+  var dx = (drag.x - drag.startX) / z;
+  var dy = (drag.y - drag.startY) / z;
+  drag.ghost.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1)
+                             + 'px) scale(1.06) rotate(1.2deg)';
+}
+function activateDrag(){
+  if (!drag || drag.active) return;
+  clearTimeout(drag.holdTimer);
+  drag.phase = 'active'; drag.active = true;
+  _suppressClick = true;
+  /* 有些浏览器在 pointerdown 到激活之间已经起了选区，先清掉 */
+  if (window.getSelection){ var sel = window.getSelection(); if (sel) sel.removeAllRanges(); }
+  var r = drag.node.getBoundingClientRect();
+  var g = drag.node.cloneNode(true);
+  g.classList.add('drag-ghost');
+  g.classList.remove('picked');
+  fixedBox(g, r.left, r.top, r.width, r.height);
+  g.style.transform = 'translate(0,0) scale(1.06) rotate(1.2deg)';
+  document.body.appendChild(g);
+  drag.ghost = g;
+  drag.node.classList.add('picked');
+  document.body.classList.add('dragging');
+  /* hover 透视会在拖拽时把网格拧歪，先清掉 */
+  gridEl.classList.remove('focus');
+  gridEl.removeAttribute('data-col'); gridEl.removeAttribute('data-row');
+  gridEl.style.transform = '';
+  var xm = gridEl.querySelector('.xmark'); if (xm) xm.classList.remove('on');
+  var xc = gridEl.querySelector('.cell.xcell'); if (xc) xc.classList.remove('xcell');
+  drag.scrollLock = frameEl.scrollLeft;
+  showEdgeZones(true);
+  updateGhost();
+}
+function onDragDown(e){
+  if (drag) return;
+  if (e.button !== 0 || e.isPrimary === false) return;
+  if (sheetEl.classList.contains('show')) return;
+  var node = e.target && e.target.closest ? e.target.closest('.course') : null;
+  if (!node || !gridEl.contains(node) || !node._c || !node._d) return;
+  _suppressClick = false;
+  var c = node._c, d = node._d;
+  drag = {
+    phase:'pending', active:false, pointerId:e.pointerId, pointerType:e.pointerType,
+    startX:e.clientX, startY:e.clientY, x:e.clientX, y:e.clientY,
+    node:node, c:c, d:d, srcWeek:curWeek,
+    span:Math.max(1, (c.endPeriod || c.startPeriod + 1) - c.startPeriod + 1),
+    ghost:null, holdTimer:null, dwellTimer:null, repeatTimer:null,
+    edgeDir:0, edgeDead:false, target:null, scrollLock:frameEl.scrollLeft
+  };
+  drag.holdTimer = setTimeout(function(){
+    if (drag && drag.phase === 'pending') activateDrag();
+  }, DRAG_CFG.holdMs);
+}
+function onDragMove(e){
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.phase === 'pending'){
+    var dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (drag.pointerType === 'mouse' && dist >= DRAG_CFG.mouseDist) activateDrag();
+    else if (dist > DRAG_CFG.touchSlop){ clearTimeout(drag.holdTimer); drag = null; return; }
+    else return;
+  }
+  if (!drag || !drag.active) return;
+  if (e.cancelable) e.preventDefault();
+  updateGhost();
+  drag.target = resolveTarget(drag.x, drag.y);
+  markTarget(drag.target);
+  updateEdge(drag.x, drag.y);
+}
+function onDragUp(e){
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  if (drag.phase === 'pending'){
+    clearTimeout(drag.holdTimer); drag = null; return;   /* 普通点击交给 openSheet */
+  }
+  finishDrag(drag.target && drag.target.valid ? drag.target : null);
+}
+function finishDrag(t){
+  if (!drag) return;
+  clearTimeout(drag.holdTimer);
+  clearEdgeTimers();
+  showEdgeZones(false);
+  clearTargetMark();
+  var g = drag.ghost, node = drag.node;
+  document.body.classList.remove('dragging');
+  if (node) node.classList.remove('picked');
+  if (t){
+    if (g) g.remove();
+    commitDragMove(t);
+  } else if (g){
+    g.classList.add('bounce');
+    g.style.transform = 'translate(0,0) scale(1)';
+    setTimeout(function(){ g.remove(); }, 220);
+  }
+  drag = null;
+  setTimeout(function(){ _suppressClick = false; }, 360);
+}
+/* 找到「这一节课」在 OV 里的真正主键：它可能本身就是被挪过来的，
+   主键在最初的那一周，而不是眼前显示的这一格。不追回去就会留下幽灵课。 */
+function dragOriginOf(name, date, period){
+  var rec = ovOf(name, date, period) || ovTargetOf(name, date, period);
+  return rec ? {name:rec.name, fromDate:rec.fromDate, fromPeriod:rec.fromPeriod}
+             : {name:name, fromDate:date, fromPeriod:period};
+}
+function commitDragMove(t){
+  var c = drag.c, d = drag.d, span = drag.span;
+  var snap = OV.slice();
+  var aKey = dragOriginOf(c.name, d.date, c.startPeriod);
+  var keys = [aKey], bKey = null, swap = t.swap;
+  if (swap){
+    bKey = dragOriginOf(swap.c.name, swap.date, swap.c.startPeriod);
+    if (bKey.name === aKey.name && bKey.fromDate === aKey.fromDate
+        && bKey.fromPeriod === aKey.fromPeriod){ swap = null; bKey = null; }
+    else keys.push(bKey);
+  }
+  OV = OV.filter(function(o){
+    return !keys.some(function(k){
+      return o.name === k.name && o.fromDate === k.fromDate && o.fromPeriod === k.fromPeriod;
+    });
+  });
+  /* 拖回最初的位置 = 撤销这次调课，别写一条自己指向自己的记录 */
+  var backHome = (aKey.fromDate === t.toDate && aKey.fromPeriod === t.toPeriod);
+  if (!backHome){
+    OV.push({
+      name:c.name, fromDate:aKey.fromDate, fromPeriod:aKey.fromPeriod, span:span,
+      type:'move', toDate:t.toDate, toPeriod:t.toPeriod,
+      teacher:c.teacher || '', location:c.location || '', room:c.room || ''
+    });
+  }
+  if (swap){
+    var bc = swap.c;
+    OV.push({
+      name:bc.name, fromDate:bKey.fromDate, fromPeriod:bKey.fromPeriod,
+      span:Math.max(1, (bc.endPeriod || bc.startPeriod + 1) - bc.startPeriod + 1),
+      type:'move', toDate:d.date, toPeriod:c.startPeriod,
+      teacher:bc.teacher || '', location:bc.location || '', room:bc.room || ''
+    });
+  }
+  saveOv();
+  refresh();
+  _undoSnapshot = snap;
+  showToast('已调课：' + c.name + ' → 第 ' + curWeek + ' 周 ' + DAY_NAMES[t.day]
+    + ' 第 ' + t.toPeriod + '-' + t.endP + ' 节'
+    + (swap ? '（与 ' + swap.c.name + ' 交换）' : '') + (backHome ? '（已复原）' : ''));
+}
+function showToast(msg){
+  clearTimeout(_toastTimer);
+  toastEl.innerHTML = '<span class="tx"></span><button type="button" data-undo="1">撤销</button>';
+  toastEl.querySelector('.tx').textContent = msg;
+  toastEl.classList.add('show');
+  _toastTimer = setTimeout(hideToast, 4000);
+}
+function hideToast(){
+  clearTimeout(_toastTimer);
+  toastEl.classList.remove('show');
+  _undoSnapshot = null;
+}
+toastEl.addEventListener('click', function(e){
+  if (!e.target.closest || !e.target.closest('[data-undo]')) return;
+  if (!_undoSnapshot) return;
+  OV = _undoSnapshot;
+  saveOv(); refresh(); hideToast();
+});
+
+/* CSS 之外再兜一层：Safari / 部分 WebView 的 user-select:none 只在
+   选区起点生效，拖出去以后仍可能起新选区；原生 HTML5 拖拽也要拦。 */
+document.addEventListener('selectstart', function(e){
+  if (drag && e.cancelable) e.preventDefault();
+});
+document.addEventListener('dragstart', function(e){
+  if (drag && e.cancelable) e.preventDefault();
+});
+gridEl.addEventListener('pointerdown', onDragDown, {passive:true});
+document.addEventListener('pointermove', onDragMove, {passive:false});
+document.addEventListener('pointerup', onDragUp);
+document.addEventListener('pointercancel', function(e){
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  if (drag.active) finishDrag(null);
+  else { clearTimeout(drag.holdTimer); drag = null; }
+});
+/* iOS Safari 的 touch-action 不总可靠，拖拽中再兜一层 */
+document.addEventListener('touchmove', function(e){
+  if (isDragging() && e.cancelable) e.preventDefault();
+}, {passive:false});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && isDragging()){
+    e.preventDefault(); e.stopPropagation(); finishDrag(null);
+  }
+}, true);
+/* 拖拽结束后紧跟的那次 click 不能打开详情；只吞落在网格里的 */
+document.addEventListener('click', function(e){
+  if (!_suppressClick) return;
+  if (e.target && e.target.closest && e.target.closest('#grid')){
+    e.preventDefault(); e.stopPropagation();
+  }
+  _suppressClick = false;
+}, true);
+window.addEventListener('resize', function(){ if (isDragging()) paintEdgeZones(); });
+
+/* 只读探针：E2E 用精确坐标构造手势，不必靠猜像素 */
+window.__dragProbe = {
+  cfg:function(){ return DRAG_CFG; },
+  state:function(){
+    if (!drag) return null;
+    return {
+      phase:drag.phase, active:drag.active, week:curWeek,
+      edgeDir:drag.edgeDir, edgeDead:drag.edgeDead,
+      src:{name:drag.c.name, date:drag.d.date, period:drag.c.startPeriod, span:drag.span},
+      target:drag.target ? {day:drag.target.day, row:drag.target.row, week:curWeek,
+                            toDate:drag.target.toDate, toPeriod:drag.target.toPeriod,
+                            valid:drag.target.valid, swap:!!drag.target.swap} : null
+    };
+  },
+  bands:function(){
+    var b = edgeBands();
+    return {l:b.l.slice(), r:b.r.slice(),
+            frame:{left:b.fr.left, right:b.fr.right, top:b.fr.top, bottom:b.fr.bottom}};
+  },
+  cellRect:function(day, row){
+    var el = gridEl.querySelector('.cell[data-c="' + day + '"][data-r="' + row + '"]');
+    return el ? rectOf(el) : null;
+  },
+  courseRect:function(date, period){
+    var els = gridEl.querySelectorAll('.course');
+    for (var i = 0; i < els.length; i++){
+      if (els[i]._c && els[i]._d && els[i]._d.date === date
+          && els[i]._c.startPeriod === period) return rectOf(els[i]);
+    }
+    return null;
+  },
+  ov:function(){ return OV.slice(); },
+  weeks:function(){ return {cur:curWeek, max:DATA.maxWeek}; }
 };
 
 $('#cls').textContent = DATA.meta.className || '课表';

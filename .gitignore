@@ -14,6 +14,10 @@ config/overrides.json.tmp
 # 3D 页的构建依赖（three / esbuild），不提交
 web3d/node_modules/
 
+# 拖拽 E2E 的本地依赖与截图产物，不提交
+tests/e2e/node_modules/
+tests/e2e/artifacts/
+
 # 教务系统导出的真实课表（含姓名、学号、教师全名），只在本地
 config/mine.json
 config/mine-courses.json
