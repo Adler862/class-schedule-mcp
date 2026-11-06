@@ -1098,6 +1098,11 @@ function openSheet(c, day, node){
 /* 把课程块从网格里「抽出来」：克隆一份飞向屏幕中央并放大，
    网格同时后退变淡。像从档案架里抽出一份文件摊到眼前。 */
 function drawOut(node, done){
+  /* CSS zoom（浏览器缩放 / 录屏取景都会用）下，getBoundingClientRect 是缩放后的
+     视觉坐标，而 window.innerWidth 没有跟着缩，left/top 又要再乘一遍 zoom。
+     三者不在同一个坐标系里，混用就会让这张卡片飞到画面右上角去。
+     下面统一换算到"视觉坐标"，z=1 时与原式完全等价。 */
+  var z = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
   var first = node.getBoundingClientRect();
   var w = Math.min(430, window.innerWidth - 56);
   var h = Math.min(230, window.innerHeight * 0.42);
@@ -1109,8 +1114,8 @@ function drawOut(node, done){
      反过来（先小后 scale）就会糊成一团。 */
   var g = document.createElement('div');
   g.className = 'drawn';
-  g.style.left = (cx - w / 2) + 'px';
-  g.style.top = (cy - h / 2) + 'px';
+  g.style.left = ((cx - w * z / 2) / z) + 'px';
+  g.style.top = ((cy - h * z / 2) / z) + 'px';
   g.style.width = w + 'px';
   g.style.height = h + 'px';
   g.style.transformOrigin = 'center center';
@@ -1122,9 +1127,9 @@ function drawOut(node, done){
     + '<div class="dr-name">' + c.name + '</div>'
     + '<div class="dr-meta">' + (c.teacher || '') + '　' + (c.location || c.room || '') + '</div>';
 
-  var dx = (first.left + first.width / 2) - cx;
-  var dy = (first.top + first.height / 2) - cy;
-  var sc = first.width / w;
+  var dx = ((first.left + first.width / 2) - cx) / z;
+  var dy = ((first.top + first.height / 2) - cy) / z;
+  var sc = first.width / (w * z);
   g.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) scale(' + sc.toFixed(4) + ')';
 
   if (_ghost){ _ghost.remove(); _ghost = null; }
