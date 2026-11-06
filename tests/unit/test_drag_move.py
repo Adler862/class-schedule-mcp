@@ -50,6 +50,26 @@ class DragTemplateTest(unittest.TestCase):
         self.assertNotIn('<!--LINK3D-->', docs)
         self.assertIsInstance(json.loads(data_blob(docs)), dict)
 
+    def test_ovbar_sits_below_the_grid(self):
+        """状态栏在课表上方时，第一次调课从 display:none 变 flex 会把整张表推下去。"""
+        tpl = read(TPL)
+        i_grid = tpl.index('<div class="grid-frame"')
+        i_bar = tpl.index('<div class="ovbar"')
+        self.assertGreater(i_bar, i_grid, 'ovbar 必须排在 gridFrame 之后')
+        self.assertLess(i_bar, tpl.index('<div class="panel">'), 'ovbar 应在问答面板之前')
+
+    def test_week_flip_clears_stale_animation_state(self):
+        """拖拽翻周走 showWeek(w,false)，必须清掉带动画切周留下的定时器和 class，
+        否则旧定时器会二次重绘、swapin 会复活，看着像「课表出现两次」。"""
+        tpl = read(TPL)
+        branch = tpl[tpl.index('if (!animate || reduceMotion())'):]
+        branch = branch[:branch.index('var frame =')]
+        self.assertIn('clearTimeout(_flipTimer)', branch)
+        self.assertIn("classList.remove('swapout', 'swapin')", branch)
+        self.assertIn('function slideGrid(dir)', tpl)
+        self.assertIn('frameEl.animate(', tpl, '横滑应改用 WAAPI，不切 CSS class')
+        self.assertNotIn("classList.add('slide-next')", tpl)
+
     def test_gesture_and_edge_parameters(self):
         """这些数字是 grill 时定下来的交互契约，改了要同步改 E2E。"""
         tpl = read(TPL)

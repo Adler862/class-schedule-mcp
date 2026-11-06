@@ -53,7 +53,7 @@ if (!EXE) {
 
 const browser = await chromium.launch({
   executablePath: EXE, headless: true,
-  args: ['--no-sandbox', '--disable-gpu'],
+  args: ['--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader'],
 });
 
 /* ---------- 页面探针 ---------- */
@@ -64,6 +64,10 @@ const bands   = p => p.evaluate(() => window.__dragProbe.bands());
 const cell    = (p, d, r) => p.evaluate(([d, r]) => window.__dragProbe.cellRect(d, r), [d, r]);
 const course  = (p, date, period) => p.evaluate(([date, period]) => window.__dragProbe.courseRect(date, period), [date, period]);
 const dateOf  = (p, w, d) => p.evaluate(([w, d]) => isoOf(dateOfWeekDay(w, d)), [w, d]);
+const week3d  = p => p.evaluate(() => {
+  const m = /第\s*(\d+)\s*周/.exec(document.getElementById('slotName').textContent);
+  return m ? Number(m[1]) : null;
+});
 const mid     = r => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
 const sleep   = ms => new Promise(r => setTimeout(r, ms));
 
@@ -82,26 +86,34 @@ async function edgePoint(page, side, viewportHeight) {
 }
 
 const results = [];
-async function run(name, fn, contextOptions = {}) {
+async function run(name, fn, contextOptions = {}, pagePath = '/docs/index.html') {
+  const is3d = pagePath.indexOf('3d.html') >= 0;
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...contextOptions });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
   page.on('console', m => {
-    if (m.type() === 'error' && !/favicon\.ico/i.test(m.text())) errors.push(`console: ${m.text()}`);
+    const t = m.text();
+    if (m.type() === 'error' && !/favicon\.ico/i.test(t)
+        && !/WebGL|SwiftShader|GPU stall/i.test(t)) errors.push(`console: ${t}`);
   });
   try {
-    await page.goto(`${BASE}/docs/index.html`);
-    await page.waitForSelector('#grid .course');
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-    await page.waitForSelector('#grid .course');
-    /* 首屏切周有 330ms 的 swapin 3D 动画，动画期间网格框带 transform，
-       getBoundingClientRect 不是稳定布局坐标。等它结束再取感应带。 */
-    await page.waitForFunction(() => {
-      const t = getComputedStyle(document.getElementById('gridFrame')).transform;
-      return t === 'none' || t === 'matrix(1, 0, 0, 1, 0, 0)';
-    });
+    await page.goto(`${BASE}${pagePath}`);
+    if (is3d) {
+      await page.waitForSelector('#slotName');
+      await sleep(2200);                      // 等 GLB 解析、Three.js 场景与首帧完成
+    } else {
+      await page.waitForSelector('#grid .course');
+      await page.evaluate(() => localStorage.clear());
+      await page.reload();
+      await page.waitForSelector('#grid .course');
+      /* 首屏切周有 330ms 的 swapin 3D 动画，动画期间网格框带 transform，
+         getBoundingClientRect 不是稳定布局坐标。等它结束再取感应带。 */
+      await page.waitForFunction(() => {
+        const t = getComputedStyle(document.getElementById('gridFrame')).transform;
+        return t === 'none' || t === 'matrix(1, 0, 0, 1, 0, 0)';
+      });
+    }
     await fn({ page, ctx, errors });
     assert.deepEqual(errors, [], `浏览器控制台有报错：${errors.join(' | ')}`);
     results.push({ name, ok: true });
@@ -157,6 +169,85 @@ await run('回归：拖拽过程不产生文本选区（截图里整片蓝的问
   assert.equal(sel.css, 'none', '课程块应禁用文本选择');
   assert.equal(sel.ghostCss, 'none', '幽灵卡也应禁用文本选择');
   await page.mouse.up();
+});
+
+/* ---------- 2c. 回归：状态栏在课表下方，调课后课表不位移 ---------- */
+await run('回归：调课状态栏在课表下方，课表 top/height 不位移', async ({ page }) => {
+  const layout = await page.evaluate(() => {
+    const bar = document.getElementById('ovbar');
+    const frame = document.getElementById('gridFrame');
+    const r = frame.getBoundingClientRect();
+    return {
+      after: !!(frame.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING),
+      top: r.top, height: r.height,
+    };
+  });
+  assert.equal(layout.after, true, 'ovbar 必须排在 gridFrame 之后');
+  const d1 = await dateOf(page, 10, 1);
+  await dragTo(page, mid(await course(page, d1, 1)), mid(await cell(page, 4, 2)), 8);
+  await page.mouse.up();
+  assert.equal((await ov(page)).length, 1);
+  assert.equal(await page.locator('#ovbar.show').count(), 1, '状态栏应出现');
+  const after = await page.evaluate(() => {
+    const r = document.getElementById('gridFrame').getBoundingClientRect();
+    return { top: r.top, height: r.height };
+  });
+  assert.ok(Math.abs(after.top - layout.top) < 1, `课表 top 不该变：${layout.top} → ${after.top}`);
+  assert.ok(Math.abs(after.height - layout.height) < 1,
+    `课表高度不该变：${layout.height} → ${after.height}`);
+});
+
+/* ---------- 2d. 回归：无动画切周清掉旧定时器，不二次重绘 ---------- */
+await run('回归：无动画切周清掉旧 _flipTimer，不二次重绘课表', async ({ page }) => {
+  await page.evaluate(() => {
+    window.__gridMutations = 0;
+    window.__gridObserver = new MutationObserver(() => window.__gridMutations++);
+    window.__gridObserver.observe(document.getElementById('grid'), { childList: true });
+  });
+  /* 先起一次带动画切周（160ms 后才 renderGrid），立刻用无动画切周覆盖。
+     这正是拖拽翻周的调用顺序；不清定时器就会在 160ms 把旧一周重新画一遍。 */
+  await page.evaluate(() => { showWeek(11, true); showWeek(12, false); });
+  await sleep(80);
+  const m1 = await page.evaluate(() => window.__gridMutations);
+  await sleep(420);                              // 覆盖 160ms 定时器 + 330ms swapin
+  const m2 = await page.evaluate(() => window.__gridMutations);
+  assert.equal(m2, m1, '旧 _flipTimer 不该再触发一次 renderGrid');
+  const state = await page.evaluate(() => ({
+    week: window.__dragProbe.weeks().cur,
+    cls: document.getElementById('gridFrame').className,
+    courses: document.querySelectorAll('#grid .course').length,
+    expected: DATA.weeks['12'].reduce((n, d) => n + d.courses.length, 0),
+  }));
+  assert.equal(state.week, 12);
+  assert.ok(!/swapin|swapout/.test(state.cls), `不该残留动画 class：${state.cls}`);
+  assert.equal(state.courses, state.expected, '课表内容必须是第 12 周');
+});
+
+/* ---------- 2e. 回归：拖拽翻周后不重播动画 ---------- */
+await run('回归：拖拽翻周后不残留 swapin/swapout、不重播动画', async ({ page }) => {
+  await page.locator('#next').click();
+  await sleep(560);                               // 等带动画切周完成（swapin 会常驻）
+  const w0 = (await weeks(page)).cur;
+  const src = await course(page, await dateOf(page, w0, 1), 1);
+  assert.ok(src, '该周周一应有课');
+  assert.match(await page.evaluate(() => document.getElementById('gridFrame').className),
+    /swapin/, '前置条件：此时 frame 上应挂着 swapin');
+  const p = await edgePoint(page, 'right', 900);
+  await dragTo(page, mid(src), p, 8);
+  const target = w0 + 1;
+  await page.waitForFunction(t => window.__dragProbe.weeks().cur === t,
+    target, { timeout: 2000 });
+  await page.mouse.up();
+  await sleep(420);                               // 等 200ms WAAPI 动画结束
+  const state = await page.evaluate(() => ({
+    cls: document.getElementById('gridFrame').className,
+    anims: document.getElementById('gridFrame').getAnimations().length,
+    week: window.__dragProbe.weeks().cur,
+  }));
+  assert.equal(state.week, target);
+  assert.ok(!/swapin|swapout|slide-next|slide-prev/.test(state.cls),
+    `不该残留动画 class：${state.cls}`);
+  assert.equal(state.anims, 0, '动画结束后不该有残留 animation');
 });
 
 /* ---------- 3. 网格外松手取消回弹 ---------- */
@@ -350,6 +441,55 @@ await run('手机 390x844：触摸长按拾起、横滑被锁、截图', async (
   assert.equal(await page.locator('.drag-ghost').count(), 0, '幽灵应已移除');
   await page.screenshot({ path: path.join(ARTIFACTS, 'mobile.png') });
 }, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+/* ---------- 17~20. 3D 档案架：滚轮切周 ---------- */
+await run('3D：滚轮向下切到下一周', async ({ page }) => {
+  const before = await week3d(page);
+  assert.ok(before, '应能读到当前周次');
+  await page.mouse.move(720, 450);
+  await page.mouse.wheel(0, 120);
+  await page.waitForFunction(b => {
+    const m = /第\s*(\d+)\s*周/.exec(document.getElementById('slotName').textContent);
+    return m && Number(m[1]) !== b;
+  }, before, { timeout: 2000 });
+  assert.equal(await week3d(page), before + 1, '向下滚一格应到下一周');
+}, {}, '/docs/3d.html');
+
+await run('3D：滚轮向上退回上一周', async ({ page }) => {
+  await page.mouse.move(720, 450);
+  await page.mouse.wheel(0, 120);
+  await sleep(300);                              // 跨过 240ms 冷却
+  const w1 = await week3d(page);
+  await page.mouse.wheel(0, -120);
+  await sleep(300);
+  assert.equal(await week3d(page), w1 - 1, '向上滚一格应回上一周');
+}, {}, '/docs/3d.html');
+
+await run('3D：触控板惯性一次手势最多翻一周', async ({ page }) => {
+  const before = await week3d(page);
+  const seen = await page.evaluate(() => {
+    window.__wheelSeen = 0;
+    window.addEventListener('wheel', () => window.__wheelSeen++, { capture: true });
+    /* 触控板惯性：一次手势连发多个小 wheel。这里用页面内派发而不是 page.mouse.wheel——
+       这条用例验的是「累积阈值 + 冷却」的语义，不是指针链路；真鼠标事件在
+       窗口被前一个 context 的窗口遮挡时会丢，跑起来时绿时红。 */
+    for (let i = 0; i < 8; i++) {
+      window.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));
+    }
+    return window.__wheelSeen;
+  });
+  assert.equal(seen, 8, '8 个 wheel 事件应全部送达');
+  assert.equal(await week3d(page), before + 1,
+    '一次手势只该翻一周（累积到 48 翻一格，240ms 冷却内不再翻）');
+}, {}, '/docs/3d.html');
+
+await run('3D：课表面板展开时滚轮不抢切周', async ({ page }) => {
+  const before = await week3d(page);
+  await page.mouse.move(720, 450);
+  await page.mouse.wheel(0, 120);
+  await sleep(350);
+  assert.equal(await week3d(page), before, '面板内的滚轮应留给表格滚动');
+}, {}, '/docs/3d.html?w=10');
 
 await browser.close();
 server.close();

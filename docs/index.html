@@ -530,10 +530,8 @@
   .edge-zone.show{opacity:.42}
   .edge-zone.hot{opacity:1;background:rgba(166,125,72,.2)}
   .edge-zone.dead{opacity:.5;border-color:var(--muted);background:transparent}
-  .grid-frame.slide-next{animation:drag-slide-next 200ms var(--ease)}
-  .grid-frame.slide-prev{animation:drag-slide-prev 200ms var(--ease)}
-  @keyframes drag-slide-next{from{transform:translateX(22px);opacity:.55}to{transform:none;opacity:1}}
-  @keyframes drag-slide-prev{from{transform:translateX(-22px);opacity:.55}to{transform:none;opacity:1}}
+  /* 翻周横滑改由 slideGrid() 用 Web Animations 播放，这里不挂 CSS class，
+     避免动画 class 移除时让别的 CSS animation 复活、造成课表重影。 */
   .toast{
     position:fixed;left:50%;bottom:26px;z-index:80;transform:translateX(-50%) translateY(14px);
     display:flex;align-items:center;gap:14px;max-width:min(520px,calc(100vw - 32px));
@@ -546,7 +544,7 @@
   .toast button{border:0;background:transparent;color:var(--accent);font-size:11px;cursor:pointer;padding:2px 4px;white-space:nowrap}
   @media (prefers-reduced-motion:reduce){
     body.dragging .course:not(.picked):not(.drag-ghost){animation:none}
-    .grid-frame.slide-next,.grid-frame.slide-prev,.toast,.edge-zone,.drag-ghost.bounce{animation:none;transition:none}
+    .toast,.edge-zone,.drag-ghost.bounce{animation:none;transition:none}
   }
 </style>
 </head>
@@ -576,11 +574,6 @@
 </div>
 <div class="week-ticks" id="weekTicks" role="tablist" aria-label="选择周次"></div>
 
-<div class="ovbar" id="ovbar">
-  <span id="ovtext"></span><span class="sp"></span>
-  <button id="ovclear">全部撤销</button>
-</div>
-
 <div class="grid-frame" id="gridFrame">
   <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span>
   <span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
@@ -592,6 +585,13 @@
   </div>
 
   <div class="grid" id="grid"></div>
+</div>
+
+<!-- 调课状态栏必须放在课表「下方」：第一次调课时它从 display:none 变成 flex，
+     若放在上方会把整张课表往下推三十多像素，看着像课表跳了一下。 -->
+<div class="ovbar" id="ovbar">
+  <span id="ovtext"></span><span class="sp"></span>
+  <button id="ovclear">全部撤销</button>
 </div>
 
 <div class="panel">
@@ -846,6 +846,12 @@ function showWeek(w, animate){
   if (!days) return;
 
   if (!animate || reduceMotion()){
+    /* 「课表出现两次」的根因：带动画的切周会留下一个 160ms 的 _flipTimer 和
+       常驻的 swapin class。拖拽翻周走的是这条无动画分支，如果不清，旧定时器
+       会在新一周已经画好之后又把旧一周 renderGrid 一遍；而 slide 动画结束、
+       class 被移除时 swapin 还会再播一次 330ms。两次重绘叠在一起就是抖动/重影。 */
+    if (_flipTimer){ clearTimeout(_flipTimer); _flipTimer = null; }
+    $('#gridFrame').classList.remove('swapout', 'swapin');
     paintWeek(w, days);
     renderGrid(days);
     return;
@@ -1540,12 +1546,19 @@ function clearEdgeTimers(){
   if (drag.dwellTimer){ clearTimeout(drag.dwellTimer); drag.dwellTimer = null; }
   if (drag.repeatTimer){ clearInterval(drag.repeatTimer); drag.repeatTimer = null; }
 }
+/* 翻周的横滑用 Web Animations，不切 class。
+   切 class 的代价是：动画结束移除 class 那一刻，元素上若还挂着别的
+   CSS animation（比如首屏切周留下的 swapin），会立刻复活再播一遍 ——
+   看起来就是「课表出现两次」。WAAPI 是一次性的，结束即消失，不留状态。 */
 function slideGrid(dir){
-  var cls = dir > 0 ? 'slide-next' : 'slide-prev';
-  frameEl.classList.remove('slide-next', 'slide-prev');
-  void frameEl.offsetWidth;
-  frameEl.classList.add(cls);
-  setTimeout(function(){ frameEl.classList.remove(cls); }, DRAG_CFG.slideMs + 40);
+  if (reduceMotion() || !frameEl.animate) return;
+  try {
+    frameEl.getAnimations().forEach(function(a){ a.cancel(); });
+    frameEl.animate(
+      [{ transform:'translateX(' + (dir > 0 ? 22 : -22) + 'px)', opacity:.62 },
+       { transform:'none', opacity:1 }],
+      { duration:DRAG_CFG.slideMs, easing:'cubic-bezier(.22,1,.36,1)' });
+  } catch (e) { /* 老浏览器不支持 WAAPI：直接重绘，不动画 */ }
 }
 function flipWeek(dir){
   var nw = clampWeek(curWeek + dir);
