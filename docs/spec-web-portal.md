@@ -80,7 +80,7 @@
 
 ## 验收标准
 
-1. `/d/Python/python.exe -m unittest discover -s tests` 全绿。
+1. `python -m unittest discover -s tests/unit -t .` 全绿。
 2. 起服务后手机（同一局域网）能打开，周网格正确渲染，单双周课程不串。
 3. 问「明天几节课」能返回结构化结果，不是一段看不懂的文本。
 4. `export.ics` 能导入手机日历，事件时间正确。

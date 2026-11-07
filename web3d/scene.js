@@ -762,15 +762,16 @@ addEventListener('keydown', (ev) => {
    滚轮直接映射成「下一根 / 上一根档案」，和键盘同一条 select() 路径，
    所以面板开着时内容、引线、周次带都会一起跟着换。
 
-   为什么不是 deltaY 一冒头就翻：触控板惯性一次手势会连发几十个 wheel，
-   不攒阈值 + 冷却会一口气冲过好几周。攒到 WHEEL_STEP 才走一格，
-   两格之间至少隔 WHEEL_COOLDOWN，手势停了 WHEEL_IDLE 就把余量清零。
+   为什么不 deltaY 一冒头就翻：触控板惯性一次手势会连发几十个 wheel。
+   攒到 WHEEL_STEP 才走一格，两格之间至少隔 WHEEL_COOLDOWN；冷却期内的
+   余量直接丢掉，否则长惯性手势会一直攒着，冷却一到立刻补翻第二周。
+   手势停了 WHEEL_IDLE 也把余量清零。
 
    抽出某一周的课表纸时（sheetOpen）滚轮同样切周：select() 会顺带调
    openWeekSheet(nextWeek)，把纸上的周次、日期和课程一起换成新一周。
-   只有真正能滚的表格容器（.tbody / .twrap，窄屏才出现）才把滚轮还给它；
-   Ctrl+滚轮是浏览器缩放，横向滑动也不算切周。3D 轨道是环形的，
-   首尾沿用 select() 的循环语义，和键盘保持一致。 */
+   落在真正能纵向滚的容器里时把滚轮还给它；Ctrl+滚轮是浏览器缩放，
+   横向滑动也不算切周。滚轮到第 1 / 17 周停住，和 2D 拖拽翻周一致；
+   方向键仍按档案架的环形轨道绕行。 */
 const WHEEL_STEP = 48;
 const WHEEL_COOLDOWN = 240;
 const WHEEL_IDLE = 200;
@@ -778,25 +779,41 @@ let wheelAccum = 0;
 let wheelLastFlip = 0;
 let wheelIdleTimer = 0;
 
+/* 之前硬编码 .tbody / .twrap，可这两块当前是 display:none，判断永不命中。
+   改成按「可见且真的能纵向滚」判断，将来窄屏启用面板也接得住。 */
+function wheelInsideScrollable(target) {
+  let node = target;
+  while (node && node.nodeType === 1 && node !== document.documentElement) {
+    const oy = getComputedStyle(node).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight + 2) return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
 addEventListener('wheel', (ev) => {
   if (ev.ctrlKey) return;
-  if (ev.target && ev.target.closest && ev.target.closest('.tbody, .twrap')) return;
-  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;
+  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY) * 1.2) return;
+  if (wheelInsideScrollable(ev.target)) return;
   ev.preventDefault();
 
   clearTimeout(wheelIdleTimer);
   wheelIdleTimer = setTimeout(() => { wheelAccum = 0; }, WHEEL_IDLE);
 
-  // deltaMode: 0=像素 1=行 2=页，统一折成像素，鼠标和触控板才不会差十几倍
-  const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 400 : 1;
-  wheelAccum += ev.deltaY * unit;
-
+  // deltaMode: 0=像素 1=行 2=页，统一折成像素；页模式按视口高算
+  const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? innerHeight : 1;
   const now = performance.now();
-  if (Math.abs(wheelAccum) < WHEEL_STEP || now - wheelLastFlip < WHEEL_COOLDOWN) return;
+  /* 冷却期内的余量直接丢掉：长惯性手势不该靠攒着的余量连翻好几周。 */
+  if (now - wheelLastFlip < WHEEL_COOLDOWN) { wheelAccum = 0; return; }
+  wheelAccum += ev.deltaY * unit;
+  if (Math.abs(wheelAccum) < WHEEL_STEP) return;
+
   const dir = wheelAccum > 0 ? 1 : -1;
   wheelAccum = 0;
   wheelLastFlip = now;
-  select(selected + dir);
+  const next = selected + dir;
+  if (next < 0 || next >= PERIOD) return;
+  select(next);
 }, { passive: false });
 
 /* ---------- 覆盖层 ----------
@@ -1430,3 +1447,4 @@ if (qw >= 1 && qw <= PERIOD) {
 
 try { tick(performance.now()); } catch (e) { document.title = 'TICK ' + e.message; }
 renderer.setAnimationLoop(tick);
+window.__sceneReady = true;

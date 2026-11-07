@@ -85,23 +85,26 @@ async function edgePoint(page, side, viewportHeight) {
   return { x: (a + z) / 2, y };
 }
 
+const VIEWPORT = { width: 1440, height: 900 };
 const results = [];
 async function run(name, fn, contextOptions = {}, pagePath = '/docs/index.html') {
   const is3d = pagePath.indexOf('3d.html') >= 0;
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...contextOptions });
+  const ctx = await browser.newContext({ viewport: VIEWPORT, ...contextOptions });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
   page.on('console', m => {
     const t = m.text();
-    if (m.type() === 'error' && !/favicon\.ico/i.test(t)
-        && !/WebGL|SwiftShader|GPU stall/i.test(t)) errors.push(`console: ${t}`);
+    /* favicon 的 404 是本地静态服务造成的，与页面无关；其余 error 一律不放过 */
+    if (m.type() === 'error' && !/favicon\.ico/i.test(t)) errors.push(`console: ${t}`);
   });
   try {
     await page.goto(`${BASE}${pagePath}`);
     if (is3d) {
-      await page.waitForSelector('#slotName');
-      await sleep(2200);                      // 等 GLB 解析、Three.js 场景与首帧完成
+      /* 等 scene.js 自己报就绪，不再靠固定 sleep 赌机器快慢 */
+      await page.waitForFunction(() => window.__sceneReady === true,
+        null, { timeout: 20000 });
+      await sleep(150);                       // 再让首帧画完
     } else {
       await page.waitForSelector('#grid .course');
       await page.evaluate(() => localStorage.clear());
@@ -233,7 +236,7 @@ await run('回归：拖拽翻周后不残留 swapin/swapout、不重播动画', 
   assert.ok(src, '该周周一应有课');
   assert.match(await page.evaluate(() => document.getElementById('gridFrame').className),
     /swapin/, '前置条件：此时 frame 上应挂着 swapin');
-  const p = await edgePoint(page, 'right', 900);
+  const p = await edgePoint(page, 'right', VIEWPORT.height);
   await dragTo(page, mid(src), p, 8);
   const target = w0 + 1;
   await page.waitForFunction(t => window.__dragProbe.weeks().cur === t,
@@ -310,7 +313,7 @@ await run('目标格已有课：两节交换，写两条 OV', async ({ page }) =
 /* ---------- 7. 右边缘翻周 ---------- */
 await run('拖出右侧感应带：停留 500ms 翻到下一周', async ({ page }) => {
   const src = await course(page, await dateOf(page, 10, 1), 1);
-  const p = await edgePoint(page, 'right', 900);
+  const p = await edgePoint(page, 'right', VIEWPORT.height);
   await dragTo(page, mid(src), p, 8);
   await page.waitForFunction(() => window.__dragProbe.weeks().cur === 11,
     null, { timeout: 2000 });
@@ -324,7 +327,7 @@ await run('拖出右侧感应带：停留 500ms 翻到下一周', async ({ page 
 /* ---------- 8. 按住连翻 ---------- */
 await run('按住不放：每 800ms 连翻一周', async ({ page }) => {
   const src = await course(page, await dateOf(page, 10, 1), 1);
-  const p = await edgePoint(page, 'right', 900);
+  const p = await edgePoint(page, 'right', VIEWPORT.height);
   await dragTo(page, mid(src), p, 8);
   await page.waitForFunction(() => window.__dragProbe.weeks().cur >= 12,
     null, { timeout: 4000 });
@@ -336,7 +339,7 @@ await run('按住不放：每 800ms 连翻一周', async ({ page }) => {
 /* ---------- 9. 左边缘翻周 ---------- */
 await run('拖出左侧感应带：翻到上一周', async ({ page }) => {
   const src = await course(page, await dateOf(page, 10, 1), 1);
-  const p = await edgePoint(page, 'left', 900);
+  const p = await edgePoint(page, 'left', VIEWPORT.height);
   await dragTo(page, mid(src), p, 8);
   await page.waitForFunction(() => window.__dragProbe.weeks().cur === 9,
     null, { timeout: 2000 });
@@ -350,7 +353,7 @@ await run('W1 继续往左：停住不回卷，感应带显示 dead', async ({ p
   await page.evaluate(() => showWeek(2, false));
   const src = await course(page, await dateOf(page, 2, 1), 1);
   assert.ok(src, 'W2 周一应有课');
-  const p = await edgePoint(page, 'left', 900);
+  const p = await edgePoint(page, 'left', VIEWPORT.height);
   await dragTo(page, mid(src), p, 8);
   await page.waitForFunction(() => window.__dragProbe.weeks().cur === 1,
     null, { timeout: 2000 });
@@ -363,7 +366,7 @@ await run('W17 继续往右：停住不回卷', async ({ page }) => {
   await page.evaluate(() => showWeek(DATA.maxWeek, false));
   const src = await course(page, await dateOf(page, 17, 1), 1);
   assert.ok(src, 'W17 周一应有课');
-  const p = await edgePoint(page, 'right', 900);
+  const p = await edgePoint(page, 'right', VIEWPORT.height);
   await dragTo(page, mid(src), p, 8);
   await page.waitForSelector('#edgeR.dead', { timeout: 2000 });
   assert.equal((await weeks(page)).cur, 17);
@@ -374,7 +377,7 @@ await run('W17 继续往右：停住不回卷', async ({ page }) => {
 await run('翻周后松手：源周是起拖那一周，目标落在当前周', async ({ page }) => {
   const d1 = await dateOf(page, 10, 1), w11d4 = await dateOf(page, 11, 4);
   const src = await course(page, d1, 1);
-  const p = await edgePoint(page, 'right', 900);
+  const p = await edgePoint(page, 'right', VIEWPORT.height);
   await dragTo(page, mid(src), p, 8);
   await page.waitForFunction(() => window.__dragProbe.weeks().cur === 11,
     null, { timeout: 2000 });
@@ -414,6 +417,36 @@ await run('拖拽中按 Escape：取消，不留幽灵', async ({ page }) => {
   await sleep(260);
   assert.equal(await page.locator('.drag-ghost').count(), 0);
 });
+
+/* ---------- 14b. 回归：长按还没到阈值时按 Escape ---------- */
+await run('回归：长按 pending 阶段按 Escape 也能取消', async ({ page }) => {
+  const c = mid(await course(page, await dateOf(page, 10, 1), 1));
+  await page.mouse.move(c.x, c.y);
+  await page.mouse.down();
+  await sleep(40);                                  // 还没到 220ms 长按阈值
+  assert.equal((await state(page)).phase, 'pending');
+  await page.keyboard.press('Escape');
+  assert.equal(await state(page), null, 'pending 阶段也应能取消');
+  await sleep(280);                                 // 越过长按定时器
+  assert.equal(await state(page), null, '旧 holdTimer 不该再把卡片拾起来');
+  assert.equal(await page.locator('.drag-ghost').count(), 0);
+  await page.mouse.up();
+  assert.equal((await ov(page)).length, 0);
+});
+
+/* ---------- 14c. 回归：触屏快速滑动取消后不误开详情 ---------- */
+await run('回归：触屏快速滑动取消后不打开详情', async ({ page, ctx }) => {
+  const cdp = await ctx.newCDPSession(page);
+  const c = mid(await course(page, await dateOf(page, 10, 1), 1));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: c.x, y: c.y }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove',
+    touchPoints: [{ x: c.x + 40, y: c.y + 40 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(300);
+  assert.equal(await state(page), null);
+  assert.equal(await page.locator('#sheet.show').count(), 0, '不该误开详情面板');
+  assert.equal((await ov(page)).length, 0);
+}, { hasTouch: true });
 
 /* ---------- 15. 桌面截图 ---------- */
 await run('桌面 1440x900 截图', async ({ page }) => {
@@ -483,7 +516,7 @@ await run('明暗主题：选择会记住、按钮不显眼', async ({ page }) =
 await run('3D：滚轮向下切到下一周', async ({ page }) => {
   const before = await week3d(page);
   assert.ok(before, '应能读到当前周次');
-  await page.mouse.move(720, 450);
+  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
   await page.mouse.wheel(0, 120);
   await page.waitForFunction(b => {
     const m = /第\s*(\d+)\s*周/.exec(document.getElementById('slotName').textContent);
@@ -493,7 +526,7 @@ await run('3D：滚轮向下切到下一周', async ({ page }) => {
 }, {}, '/docs/3d.html');
 
 await run('3D：滚轮向上退回上一周', async ({ page }) => {
-  await page.mouse.move(720, 450);
+  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
   await page.mouse.wheel(0, 120);
   await sleep(300);                              // 跨过 240ms 冷却
   const w1 = await week3d(page);
@@ -503,28 +536,53 @@ await run('3D：滚轮向上退回上一周', async ({ page }) => {
 }, {}, '/docs/3d.html');
 
 await run('3D：触控板惯性一次手势最多翻一周', async ({ page }) => {
+  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
   const before = await week3d(page);
   const seen = await page.evaluate(() => {
     window.__wheelSeen = 0;
     window.addEventListener('wheel', () => window.__wheelSeen++, { capture: true });
-    /* 触控板惯性：一次手势连发多个小 wheel。这里用页面内派发而不是 page.mouse.wheel——
-       这条用例验的是「累积阈值 + 冷却」的语义，不是指针链路；真鼠标事件在
-       窗口被前一个 context 的窗口遮挡时会丢，跑起来时绿时红。 */
-    for (let i = 0; i < 8; i++) {
-      window.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));
-    }
-    return window.__wheelSeen;
+    return 0;
   });
-  assert.equal(seen, 8, '8 个 wheel 事件应全部送达');
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 40);   // 真实指针链路
+  await sleep(220);
+  assert.equal(await page.evaluate(() => window.__wheelSeen), 8, '8 个 wheel 应全部送达');
   assert.equal(await week3d(page), before + 1,
     '一次手势只该翻一周（累积到 48 翻一格，240ms 冷却内不再翻）');
 }, {}, '/docs/3d.html');
+
+await run('3D：长惯性手势跨过冷却也不连翻', async ({ page }) => {
+  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
+  const before = await week3d(page);
+  /* 8 个小 delta 拉长到 480ms，跨过 240ms 冷却。旧逻辑会在冷却期内一直
+     攒余量，冷却一到就连续补翻；新逻辑丢弃冷却期余量，按冷却节奏走。 */
+  for (let i = 0; i < 8; i++) {
+    await page.mouse.wheel(0, 40);
+    await sleep(60);
+  }
+  await sleep(180);
+  const jumped = (await week3d(page)) - before;
+  assert.ok(jumped >= 1 && jumped <= 2, `一次长惯性手势不该跳 ${jumped} 周`);
+}, {}, '/docs/3d.html');
+
+await run('3D：W1 继续向上滚停住', async ({ page }) => {
+  assert.equal(await week3d(page), 1);
+  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
+  for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, -120); await sleep(300); }
+  assert.equal(await week3d(page), 1, '第 1 周不该回卷到 17');
+}, {}, '/docs/3d.html?w=1');
+
+await run('3D：W17 继续向下滚停住', async ({ page }) => {
+  assert.equal(await week3d(page), 17);
+  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
+  for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, 120); await sleep(300); }
+  assert.equal(await week3d(page), 17, '第 17 周不该回卷到 1');
+}, {}, '/docs/3d.html?w=17');
 
 await run('3D：抽出课表纸后滚轮同样切周', async ({ page }) => {
   assert.match(await page.evaluate(() => document.body.className), /sheet-open/,
     '前置条件：应处于抽出课表纸的状态');
   const before = await week3d(page);
-  await page.mouse.move(720, 450);
+  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
   await page.mouse.wheel(0, 120);
   await page.waitForFunction(b => {
     const m = /第\s*(\d+)\s*周/.exec(document.getElementById('slotName').textContent);

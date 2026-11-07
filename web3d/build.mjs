@@ -82,7 +82,19 @@ const html = shell
   .replace('/*__DATA__*/null', () => JSON.stringify(payload))
   .replace('/*__BUNDLE__*/', () => code);
 
-await mkdir(dirname(out), { recursive: true });
-await writeFile(out, html, 'utf8');
-console.log(`已生成 ${out}  ${(Buffer.byteLength(html) / 1024).toFixed(0)} KB`
-  + `  · ${courses.length} 个时段 · 起点 ${start} · ${maxWeek} 周`);
+/* --check：只重构建一次并与现有产物逐字比对，不写文件。
+   单测用它锁住「改了 scene.js / shell.html / config 忘了重建」。 */
+if (process.argv.includes('--check')) {
+  let current = '';
+  try { current = await readFile(out, 'utf8'); } catch { /* 产物还不存在 */ }
+  if (current !== html) {
+    console.error('STALE: docs/3d.html 与源码/配置不一致，请运行 npm run build');
+    process.exit(1);
+  }
+  console.log('OK: docs/3d.html 与源码一致');
+} else {
+  await mkdir(dirname(out), { recursive: true });
+  await writeFile(out, html, 'utf8');
+  console.log(`已生成 ${out}  ${(Buffer.byteLength(html) / 1024).toFixed(0)} KB`
+    + `  · ${courses.length} 个时段 · 起点 ${start} · ${maxWeek} 周`);
+}

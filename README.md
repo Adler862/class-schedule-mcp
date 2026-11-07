@@ -8,7 +8,7 @@
 
 **在线演示**：<https://adler862.github.io/class-schedule-mcp/> —— 打开即用的离线课表页面（示例数据），
 不联网、不请求任何外部资源。该页面由 `docs/index.html` 提供，用
-`python tools/build_single.py --out docs/index.html` 从同一套引擎构建。
+`python tools/build_single.py --courses config/demo-courses.json --out docs/index.html --link-3d` 从同一套引擎构建。
 
 ## 功能
 
@@ -110,7 +110,7 @@ python tools/build_single.py --date 2026-11-02   # 把某天当作"今天"，截
 不会先闪一下白；`auto` 时继续跟随 `prefers-color-scheme`，系统主题变了也会跟着变。
 3D 档案架是固定的米白印刷质感，保持自己的配色，不引入这个按钮。
 
-**为什么是「例外」而不是改课表**：`编译原理` 的定义是「周二 1-2 节，第 2-17 周」，
+**为什么是「例外」而不是改课表**：`编译原理` 的定义是「周一 1-2 节，第 2-17 周」，
 直接把它改成周五，前面上过的周次也会跟着变，整学期历史就乱了。所以这里不改定义，
 只在上面叠一层「这一次」：某门课某天某节的这一节，挪到别处或取消。定义保持原样。
 
@@ -181,9 +181,9 @@ python tools/build_single.py --courses config/mine.json --out dist/我的课表.
 | `ESC` | 返回档案架 |
 | 鼠标在档案上移动 | 升起一小截（0.2 的抬升权重） |
 
-滚轮做了阈值累积 + 冷却（48px / 240ms），触控板一次惯性手势只会走一周，不会一口气
-冲过好几周；`Ctrl`+滚轮留给浏览器缩放，横向滑动不算切周。3D 轨道是环形的，
-首尾沿用方向键的循环语义。源码在 `web3d/scene.js`，改完要 `cd web3d && npm run build`
+滚轮做了阈值累积 + 冷却（48px / 240ms），一次短惯性手势只走一周；冷却期里的
+余量会丢掉，长手势也按 240ms 的节奏走，不会连跳。`Ctrl`+滚轮留给浏览器缩放，
+横向滑动不算切周。滚轮到第 1 / 17 周停住，方向键仍按环形轨道绕行。源码在 `web3d/scene.js`，改完要 `cd web3d && npm run build`
 重新生成 `docs/3d.html`（产物是打包后的单文件，直接改会被覆盖）。
 
 点击是**两段式**的：点别的档案只把它提起来，再点同一根才打开。模拟真实的取档动作，
@@ -224,7 +224,7 @@ primitive（对应多材质槽，需合并成 geometry + `groups`）；节点位
 课表数据在**构建时**注入（`window.DATA`），运行时零请求。改完 `config/demo-courses.json`
 要重新 `npm run build`。
 
-**体积代价**：主站 108 KB，3D 版 691 KB。所以 3D 是独立页面，主页绝不加载它。
+**体积代价**：主站 135 KB，3D 版 692 KB。所以 3D 是独立页面，主页绝不加载它。
 
 ## 架构
 
@@ -314,8 +314,9 @@ MCP 服务启动时读这个文件，改完要重启客户端里的服务连接�
 
 | 脚本 | 作用 |
 |---|---|
-| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / Web API / ICS 导出 / 单文件构建 / 模板与产物同步 / 拖拽、3D 滚轮、明暗主题护栏 / MCP 输出回归（119 个） |
-| `cd tests/e2e && npm install && npm test` | 真实浏览器回归（26 例）：Playwright Core 驱动本机 Edge，覆盖 2D 拖拽拾起、落位、交换、翻周、边界、撤销、持久化、文本选区、状态栏不位移、翻周不重绘、手机触摸、明暗主题三态与持久化，以及 3D 档案架与抽出课表纸的滚轮切周、控制台零报错；截图落在 `tests/e2e/artifacts/` |
+| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / Web API / ICS 导出 / 单文件构建 / 模板与产物同步 / 拖拽、3D 滚轮、明暗主题护栏 / MCP 输出回归（121 个） |
+| `cd tests/e2e && npm install && npm test` | 真实浏览器回归（31 例）：Playwright Core 驱动本机 Edge，覆盖 2D 拖拽拾起、落位、交换、翻周、边界、撤销、持久化、文本选区、状态栏不位移、翻周不重绘、手机触摸、明暗主题三态与持久化，以及 3D 档案架与抽出课表纸的滚轮切周、控制台零报错；截图落在 `tests/e2e/artifacts/` |
+| `cd web3d && node build.mjs --check` | 3D 产物与源码/配置是否同步，只比对不写文件 |
 | `tests/test_mcp_handshake.py` | 真实拉起服务进程，走 `initialize` / `tools/list` / `tools/call`，断言工具数量与名称 |
 | `tests/verify_news_pipeline.py` | 离线断言：桩掉 MCP 依赖后直接执行服务源码，用模拟数据校验板块配额与排序 |
 | `tests/live_test_news.py` | 联网抽查：只开部分源，看真实返回的分类与来源分布 |
