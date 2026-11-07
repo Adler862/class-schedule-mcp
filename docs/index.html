@@ -715,9 +715,17 @@ function weekOfDate(d){
    这样前面几周上过的课不会被历史性地改写。
    记录存在本机浏览器里，换设备不同步。 */
 var OV_KEY = 'kebiao-overrides-v1';
-var OV = (function(){
+/* 自指向记录（from === to）不改变课表，却会让课程一直挂着「调」标记：
+   两节交换两次回到原位时，backHome 分支会生成这种记录。读取时一并清掉，
+   顺手修好历史上已经存进 localStorage 的脏数据。 */
+function cleanOv(list){
+  return (list || []).filter(function(o){
+    return o.type !== 'move' || o.fromDate !== o.toDate || o.fromPeriod !== o.toPeriod;
+  });
+}
+var OV = cleanOv((function(){
   try { return JSON.parse(localStorage.getItem(OV_KEY) || '[]') || []; } catch (e) { return []; }
-})();
+})());
 function saveOv(){
   try { localStorage.setItem(OV_KEY, JSON.stringify(OV)); } catch (e) {}
 }
@@ -1874,6 +1882,9 @@ function commitDragMove(t){
       teacher:bc.teacher || '', location:bc.location || '', room:bc.room || ''
     });
   }
+  /* 拖回原位与交换同时发生时，被交换的那门会写成 from === to 的空记录，
+     留着会让课程一直显示「调」。落盘前统一清掉。 */
+  OV = cleanOv(OV);
   saveOv();
   refresh();
   _undoSnapshot = snap;

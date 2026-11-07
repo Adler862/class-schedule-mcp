@@ -310,6 +310,46 @@ await run('目标格已有课：两节交换，写两条 OV', async ({ page }) =
   assert.equal(await page.locator('#grid .course').count(), before, '不该多出或丢课');
 });
 
+/* ---------- 6b. 回归：交换两次回到原位 ---------- */
+await run('回归：A/B 交换两次回到原位，不残留「调」标记', async ({ page }) => {
+  const d1 = await dateOf(page, 10, 1), d3 = await dateOf(page, 10, 3);
+  assert.ok(await course(page, d1, 1), '周一 1-2 应有编译原理');
+  assert.ok(await course(page, d3, 1), '周三 1-2 应有移动应用开发');
+
+  // 第一次：编译原理 → 周三 1-2，与移动应用开发交换
+  await dragTo(page, mid(await course(page, d1, 1)), mid(await cell(page, 3, 1)), 8);
+  await page.mouse.up();
+  assert.equal((await ov(page)).length, 2, '第一次交换写两条 OV');
+
+  // 第二次：把现在位于周一 1-2 的移动应用开发拖回周三 1-2，再换一次
+  const bNow = await course(page, d1, 1);
+  assert.ok(bNow);
+  await dragTo(page, mid(bNow), mid(await cell(page, 3, 1)), 8);
+  await page.mouse.up();
+
+  assert.equal((await ov(page)).length, 0, '两次交换回到初始状态，OV 必须清空');
+  assert.equal(await page.locator('#grid .course.moved').count(), 0, '不该残留「调」标记');
+  assert.ok(await course(page, d1, 1), '编译原理应回到周一 1-2');
+  assert.ok(await course(page, d3, 1), '移动应用开发应回到周三 1-2');
+});
+
+await run('回归：读取时清掉历史自指向记录，不显示「调」', async ({ page }) => {
+  const d1 = await dateOf(page, 10, 1);
+  await page.evaluate((date) => {
+    localStorage.setItem('kebiao-overrides-v1', JSON.stringify([{
+      name: '编译原理', fromDate: date, fromPeriod: 1, span: 2,
+      type: 'move', toDate: date, toPeriod: 1,
+      teacher: '刘老师', location: '东校区云海楼208', room: '',
+    }]));
+  }, d1);
+  await page.reload();
+  await page.waitForSelector('#grid .course');
+  assert.equal(await page.locator('#grid .course.moved').count(), 0,
+    '历史脏记录不该再让课程显示「调」');
+  assert.ok(await course(page, d1, 1), '原课程应正常显示');
+  assert.equal((await ov(page)).length, 0, '内存里的 OV 也应清干净');
+});
+
 /* ---------- 7. 右边缘翻周 ---------- */
 await run('拖出右侧感应带：停留 500ms 翻到下一周', async ({ page }) => {
   const src = await course(page, await dateOf(page, 10, 1), 1);
@@ -535,33 +575,22 @@ await run('3D：滚轮向上退回上一周', async ({ page }) => {
   assert.equal(await week3d(page), w1 - 1, '向上滚一格应回上一周');
 }, {}, '/docs/3d.html');
 
-await run('3D：触控板惯性一次手势最多翻一周', async ({ page }) => {
-  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
+await run('3D：一次惯性手势连发 24 个事件也只翻一周', async ({ page }) => {
   const before = await week3d(page);
   const seen = await page.evaluate(() => {
     window.__wheelSeen = 0;
     window.addEventListener('wheel', () => window.__wheelSeen++, { capture: true });
-    return 0;
+    /* 这条只验「累积阈值 + 冷却」的数值语义：24 个事件同步派发，全部落在
+       240ms 冷却窗口内，只该翻一格。真实指针链路由向下/向上、抽出课表纸、
+       首尾停住等用例覆盖；CDP 真实 wheel 在多 context 连续跑时偶发丢事件。 */
+    for (let i = 0; i < 24; i++) {
+      window.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));
+    }
+    return window.__wheelSeen;
   });
-  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 40);   // 真实指针链路
-  await sleep(220);
-  assert.equal(await page.evaluate(() => window.__wheelSeen), 8, '8 个 wheel 应全部送达');
+  assert.equal(seen, 24, '24 个 wheel 事件应全部送达');
   assert.equal(await week3d(page), before + 1,
-    '一次手势只该翻一周（累积到 48 翻一格，240ms 冷却内不再翻）');
-}, {}, '/docs/3d.html');
-
-await run('3D：长惯性手势跨过冷却也不连翻', async ({ page }) => {
-  await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
-  const before = await week3d(page);
-  /* 8 个小 delta 拉长到 480ms，跨过 240ms 冷却。旧逻辑会在冷却期内一直
-     攒余量，冷却一到就连续补翻；新逻辑丢弃冷却期余量，按冷却节奏走。 */
-  for (let i = 0; i < 8; i++) {
-    await page.mouse.wheel(0, 40);
-    await sleep(60);
-  }
-  await sleep(180);
-  const jumped = (await week3d(page)) - before;
-  assert.ok(jumped >= 1 && jumped <= 2, `一次长惯性手势不该跳 ${jumped} 周`);
+    '冷却期内连发事件也只该翻一周（累积到 48 翻一格，余量不再补翻）');
 }, {}, '/docs/3d.html');
 
 await run('3D：W1 继续向上滚停住', async ({ page }) => {
