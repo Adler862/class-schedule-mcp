@@ -14,6 +14,10 @@ config/overrides.json.tmp
 # 3D 页的构建依赖（three / esbuild），不提交
 web3d/node_modules/
 
+# 本地构建产物与教务系统导出的中间数据，不提交
+dist/
+schedule_data.json
+
 # 拖拽 E2E 的本地依赖与截图产物，不提交
 tests/e2e/node_modules/
 tests/e2e/artifacts/
