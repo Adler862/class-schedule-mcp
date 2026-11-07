@@ -299,8 +299,8 @@ MCP 服务启动时读这个文件，改完要重启客户端里的服务连接�
 
 | 脚本                                               | 作用                                                                                                                                                              |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / Web API / ICS 导出 / 单文件构建 / 模板与产物同步 / 拖拽、3D 滚轮、明暗主题护栏 / MCP 输出回归（121 个）                                                                              |
-| `cd tests/e2e && npm install && npm test`        | 真实浏览器回归（31 例）：Playwright Core 驱动本机 Edge，覆盖 2D 拖拽拾起、落位、交换、翻周、边界、撤销、持久化、文本选区、状态栏不位移、翻周不重绘、手机触摸、明暗主题三态与持久化，以及 3D 档案架与抽出课表纸的滚轮切周、控制台零报错；截图落在 `tests/e2e/artifacts/` |
+| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / Web API / ICS 导出 / 单文件构建 / 模板与产物同步 / 拖拽、3D 滚轮、明暗主题护栏 / MCP 输出回归（122 个）                                                                              |
+| `cd tests/e2e && npm install && npm test`        | 真实浏览器回归（32 例）：Playwright Core 驱动本机 Edge，覆盖 2D 拖拽拾起、落位、交换、翻周、边界、撤销、持久化、文本选区、状态栏不位移、翻周不重绘、手机触摸、明暗主题三态与持久化，以及 3D 档案架与抽出课表纸的滚轮切周、控制台零报错；截图落在 `tests/e2e/artifacts/` |
 | `cd web3d && node build.mjs --check`             | 3D 产物与源码/配置是否同步，只比对不写文件                                                                                                                                         |
 | `tests/test_mcp_handshake.py`                    | 真实拉起服务进程，走 `initialize` / `tools/list` / `tools/call`，断言工具数量与名称                                                                                                 |
 | `tests/verify_news_pipeline.py`                  | 离线断言：桩掉 MCP 依赖后直接执行服务源码，用模拟数据校验板块配额与排序                                                                                                                          |

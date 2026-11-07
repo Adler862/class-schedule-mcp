@@ -50,6 +50,14 @@ class DragTemplateTest(unittest.TestCase):
         self.assertNotIn('<!--LINK3D-->', docs)
         self.assertIsInstance(json.loads(data_blob(docs)), dict)
 
+    def test_self_pointing_override_is_cleaned(self):
+        """from === to 的 move 记录不改变课表，却会让课程一直显示「调」。
+        两次交换回到原位时会生成，读写两端都要清掉。"""
+        tpl = read(TPL)
+        self.assertIn('function cleanOv(list)', tpl)
+        self.assertIn('var OV = cleanOv(', tpl, '读取时要清历史脏数据')
+        self.assertIn('OV = cleanOv(OV);', tpl, '落盘前也要清')
+
     def test_ovbar_sits_below_the_grid(self):
         """状态栏在课表上方时，第一次调课从 display:none 变 flex 会把整张表推下去。"""
         tpl = read(TPL)
