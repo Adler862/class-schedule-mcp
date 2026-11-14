@@ -9,6 +9,8 @@
 import os
 import re
 import json
+import gzip
+import hashlib
 import datetime
 import urllib.parse
 
@@ -106,6 +108,71 @@ def handle(method, path, query=None, body=None, root=None, today=None):
         return build_ics()
 
     return _json({'error': 'not found'}, 404)
+
+
+# ---------------------------------------------------------------------------
+# HTTP 语义层：条件请求、缓存分级、压缩
+# ---------------------------------------------------------------------------
+
+GZIP_MIN = 1024          # 小于这个长度压了反而亏（gzip 头 20 字节 + CPU）
+
+
+def etag_of(payload):
+    """内容指纹。用 sha256 前 20 位：同一份数据必然同一个 ETag，
+    不依赖 mtime，所以换机器、重装都不会把缓存全部作废。"""
+    return '"' + hashlib.sha256(payload).hexdigest()[:20] + '"'
+
+
+def _header(headers, name):
+    """取请求头。server.py 传的是 HTTPMessage（本身大小写不敏感），
+    测试里传的是普通 dict，所以这里两种都要兜住。"""
+    if not headers:
+        return ''
+    value = headers.get(name)
+    if value is None:
+        low = name.lower()
+        for k, v in headers.items():
+            if str(k).lower() == low:
+                return str(v)
+        return ''
+    return str(value)
+
+
+def accepts_gzip(headers):
+    return 'gzip' in _header(headers, 'Accept-Encoding').lower()
+
+
+def respond(method, pathname, query=None, body=None, headers=None, root=None):
+    """handle() 的内容 + 一次完整的 HTTP 响应 → (status, headers, body)。
+
+    为什么要多这一层：`handle` 的单元测试只关心内容，不该被缓存头绑住；
+    而"二次访问只传几十字节"这种事又必须能测。分层的代价是一个 dict。
+
+    缓存策略刻意保守：一律 no-cache（每次都回来问一句），由 ETag 把它变成
+    304。这样改课表、调课、换日期都会立刻生效，不需要猜 TTL。
+    """
+    headers = headers or {}
+    status, ctype, payload = handle(method, pathname, query or {}, body,
+                                    root=root or REPO_ROOT)
+
+    out = {'Content-Type': ctype, 'X-Content-Type-Options': 'nosniff'}
+    if status in (204, 304):
+        return status, out, b''
+
+    tag = etag_of(payload)
+    out['ETag'] = tag
+    out['Cache-Control'] = 'no-cache'
+    out['Vary'] = 'Accept-Encoding'
+
+    if method in ('GET', 'HEAD'):
+        inm = _header(headers, 'If-None-Match')
+        if inm and tag in [t.strip() for t in inm.split(',')]:
+            return 304, out, b''
+
+    if len(payload) >= GZIP_MIN and accepts_gzip(headers):
+        payload = gzip.compress(payload, 6)
+        out['Content-Encoding'] = 'gzip'
+    return status, out, payload
 
 
 def _serve_file(root, rel, ctype):

@@ -167,5 +167,74 @@ class IcsExportTest(unittest.TestCase):
         self.assertIn('\r\n', self.text)
 
 
+class ResponseSemanticsTest(unittest.TestCase):
+    """HTTP 语义层：ETag / 304 / gzip。内容逻辑仍在 handle，这里只测协议行为。"""
+
+    def rsp(self, path, headers=None, method='GET', query=None, body=None):
+        q = {k: [v] for k, v in (query or {}).items()}
+        return webapp.respond(method, path, q, body, headers=headers or {}, root=ROOT)
+
+    def test_get_has_etag_and_no_cache(self):
+        status, headers, _ = self.rsp('/api/meta')
+        self.assertEqual(status, 200)
+        self.assertTrue(headers['ETag'].startswith('"'))
+        self.assertEqual(headers['Cache-Control'], 'no-cache')
+        self.assertEqual(headers['Vary'], 'Accept-Encoding')
+
+    def test_etag_is_stable_and_content_addressed(self):
+        a = self.rsp('/api/meta')[1]['ETag']
+        b = self.rsp('/api/meta')[1]['ETag']
+        self.assertEqual(a, b)
+        # 内容不同 → 指纹不同（同一接口换参数）
+        c = self.rsp('/api/week', query={'week': '3'})[1]['ETag']
+        d = self.rsp('/api/week', query={'week': '4'})[1]['ETag']
+        self.assertNotEqual(c, d)
+
+    def test_if_none_match_returns_304_without_body(self):
+        etag = self.rsp('/api/meta')[1]['ETag']
+        status, headers, payload = self.rsp('/api/meta', {'If-None-Match': etag})
+        self.assertEqual(status, 304)
+        self.assertEqual(payload, b'')
+        self.assertEqual(headers['ETag'], etag)
+
+    def test_stale_if_none_match_returns_200(self):
+        status, _, payload = self.rsp('/api/meta', {'If-None-Match': '"deadbeef"'})
+        self.assertEqual(status, 200)
+        self.assertTrue(payload)
+
+    def test_header_lookup_is_case_insensitive(self):
+        etag = self.rsp('/api/meta')[1]['ETag']
+        # 普通 dict 传小写键，也要能命中
+        status, _, _ = self.rsp('/api/meta', {'if-none-match': etag})
+        self.assertEqual(status, 304)
+
+    def test_gzip_for_large_payload(self):
+        status, headers, payload = self.rsp('/api/export.ics', {'Accept-Encoding': 'gzip'})
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get('Content-Encoding'), 'gzip')
+        import gzip
+        self.assertIn(b'BEGIN:VCALENDAR', gzip.decompress(payload))
+
+    def test_no_gzip_when_client_does_not_ask(self):
+        _, headers, payload = self.rsp('/api/export.ics')
+        self.assertNotIn('Content-Encoding', headers)
+        self.assertIn(b'BEGIN:VCALENDAR', payload)
+
+    def test_small_payload_not_gzipped(self):
+        _, headers, _ = self.rsp('/healthz', {'Accept-Encoding': 'gzip'})
+        self.assertNotIn('Content-Encoding', headers)
+
+    def test_write_request_gets_etag_but_never_304(self):
+        # 写请求不该被客户端缓存：即使带了 If-None-Match 也必须是完整响应。
+        # 用一个非法 action 触发 400，避免测试动到真实的 config/overrides.json
+        body = json.dumps({'action': 'nope'}).encode('utf-8')
+        status, headers, payload = self.rsp('/api/overrides', {'If-None-Match': '"x"'},
+                                            method='POST', body=body)
+        self.assertEqual(status, 400)
+        self.assertNotEqual(status, 304)
+        self.assertIn('ETag', headers)
+        self.assertTrue(payload)
+
+
 if __name__ == '__main__':
     unittest.main()
