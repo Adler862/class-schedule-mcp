@@ -104,7 +104,10 @@ const html = shell
 if (process.argv.includes('--check')) {
   let current = '';
   try { current = await readFile(OUT, 'utf8'); } catch { /* 产物还不存在 */ }
-  if (current !== html) {
+  /* 只比内容，不比行尾：Windows 的 core.autocrlf 会把检出结果变成 CRLF，
+     而构建永远写 LF，裸比字节会让干净克隆无条件报 STALE。 */
+  const norm = (s) => s.replace(/\r\n/g, '\n');
+  if (norm(current) !== norm(html)) {
     console.error(`STALE: ${OUT} 与源码/配置不一致，请运行 npm run build`);
     process.exit(1);
   }
