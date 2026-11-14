@@ -1,0 +1,5 @@
+# 构建产物要能逐字节比对（web3d/build.mjs --check 就是干这个的）。
+# Windows 上 core.autocrlf=true 会把检出结果转成 CRLF，而构建写的是 LF，
+# 于是干净克隆跑单测必报 STALE——那不是产物过期，是行尾被改了。
+docs/*.html text eol=lf
+dist/*.html text eol=lf
