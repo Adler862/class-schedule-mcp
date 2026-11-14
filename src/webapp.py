@@ -10,6 +10,7 @@ import os
 import re
 import json
 import gzip
+import hmac
 import hashlib
 import datetime
 import urllib.parse
@@ -119,6 +120,9 @@ def handle(method, path, query=None, body=None, root=None, today=None):
 
 GZIP_MIN = 1024          # 小于这个长度压了反而亏（gzip 头 20 字节 + CPU）
 
+# 写接口的口令头。前端从 localStorage 读，值由启动时打印的 ?t= 链接带进来。
+TOKEN_HEADER = 'X-Schedule-Token'
+
 
 def etag_of(payload):
     """内容指纹。用 sha256 前 20 位：同一份数据必然同一个 ETag，
@@ -145,7 +149,8 @@ def accepts_gzip(headers):
     return 'gzip' in _header(headers, 'Accept-Encoding').lower()
 
 
-def respond(method, pathname, query=None, body=None, headers=None, root=None):
+def respond(method, pathname, query=None, body=None, headers=None, root=None,
+            token=None):
     """handle() 的内容 + 一次完整的 HTTP 响应 → (status, headers, body)。
 
     为什么要多这一层：`handle` 的单元测试只关心内容，不该被缓存头绑住；
@@ -155,6 +160,18 @@ def respond(method, pathname, query=None, body=None, headers=None, root=None):
     304。这样改课表、调课、换日期都会立刻生效，不需要猜 TTL。
     """
     headers = headers or {}
+
+    # 局域网模式下写接口要口令：读随便看，改要凭证。
+    # token 为空（默认，只监听回环时）就完全不校验，本地用起来没变化。
+    if token and method == 'POST' and (pathname or '').startswith('/api/'):
+        got = _header(headers, TOKEN_HEADER)
+        if not hmac.compare_digest(got, token):
+            payload = json.dumps(
+                {'error': '需要访问口令：用启动时打印的带 ?t= 的链接打开一次页面即可'},
+                ensure_ascii=False).encode('utf-8')
+            return 401, {'Content-Type': 'application/json; charset=utf-8',
+                         'Cache-Control': 'no-store'}, payload
+
     status, ctype, payload = handle(method, pathname, query or {}, body,
                                     root=root or REPO_ROOT)
 

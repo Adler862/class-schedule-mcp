@@ -12,7 +12,9 @@
 import os
 import sys
 import json
+import hmac
 import socket
+import secrets
 import argparse
 import datetime
 import urllib.parse
@@ -27,6 +29,8 @@ import webapp  # noqa: E402
 
 class Handler(BaseHTTPRequestHandler):
     server_version = 'ClassScheduleWeb/1.0'
+    # 由 main() 注入；None 表示不校验（只监听回环时）
+    token = None
 
     def _dispatch(self, method):
         parsed = urllib.parse.urlparse(self.path)
@@ -38,7 +42,7 @@ class Handler(BaseHTTPRequestHandler):
             # 内容逻辑仍然全在 webapp.handle 里（它的单测不受影响）
             status, headers, payload = webapp.respond(
                 method, parsed.path, query, body,
-                headers=self.headers, root=webapp.REPO_ROOT)
+                headers=self.headers, root=webapp.REPO_ROOT, token=self.token)
         except Exception as exc:  # 兜底：不让一个异常打挂整个进程
             status = 500
             headers = {'Content-Type': 'application/json; charset=utf-8'}
@@ -82,7 +86,14 @@ def main():
     ap = argparse.ArgumentParser(description='课表助手 Web 服务')
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=8765)
+    ap.add_argument('--token', help='写接口口令；只监听回环时不需要，'
+                                    '监听到局域网时不填则自动生成并打印')
     args = ap.parse_args()
+
+    # 只监听回环 = 本机自己用，不设口令；一旦暴露到局域网，写接口就必须凭证。
+    lan = args.host not in ('127.0.0.1', 'localhost', '::1')
+    token = args.token or (secrets.token_urlsafe(12) if lan else None)
+    Handler.token = token
 
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f'课表助手已启动')
@@ -90,7 +101,9 @@ def main():
     if args.host in ('0.0.0.0', '::'):
         ip = lan_ip()
         if ip:
-            print(f'  手机   http://{ip}:{args.port}')
+            # 带 ?t= 的链接：手机打开一次就把口令记在本地，之后不用再输
+            print(f'  手机   http://{ip}:{args.port}/?t={token}')
+            print(f'         （读接口不限；改调课需要上面这个链接里的口令）')
     print('  Ctrl+C 停止')
     try:
         httpd.serve_forever()
