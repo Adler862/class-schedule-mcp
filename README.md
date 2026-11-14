@@ -103,11 +103,11 @@ python tools/build_single.py --date 2026-11-02   # 把某天当作"今天"，截
 
 |     | 单文件版             | `python src/server.py`      |
 | --- | ---------------- | --------------------------- |
-| 存在哪 | 浏览器 localStorage | 服务端 `config/overrides.json` |
+| 存在哪 | 浏览器 localStorage | 服务端 `config/overrides.db`（SQLite） |
 | 换设备 | 不同步，清缓存会丢        | 跟着文件走                       |
 | 适合  | 发同学、离线看          | 自己日常用                       |
 
-服务端版的接口是 `GET/POST /api/overrides`，`config/overrides.json` 已加进 `.gitignore`
+服务端版的接口是 `GET/POST /api/overrides`，`config/overrides.db`（含 `-wal` / `-shm`）已加进 `.gitignore`
 
 ## 导入你自己的课表
 
