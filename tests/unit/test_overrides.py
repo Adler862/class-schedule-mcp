@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, 'src'))
 
 import semester  # noqa: E402
 import webapp  # noqa: E402
+import overrides_store  # noqa: E402
 
 D = datetime.date
 
@@ -38,19 +39,20 @@ class OverrideBase(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.courses = os.path.join(self.tmpdir, 'courses.json')
-        self.ovs = os.path.join(self.tmpdir, 'overrides.json')
+        self.ovs = os.path.join(self.tmpdir, 'overrides.db')
         with open(self.courses, 'w', encoding='utf-8') as f:
             json.dump(SAMPLE, f, ensure_ascii=False)
 
-        self.saved = (semester.COURSES_JSON, semester.OVERRIDES_JSON)
+        self.saved = (semester.COURSES_JSON, semester.OVERRIDES_DB)
         semester.COURSES_JSON = self.courses
-        semester.OVERRIDES_JSON = self.ovs
+        semester.OVERRIDES_DB = self.ovs
         semester._cache.clear()
 
     def tearDown(self):
-        semester.COURSES_JSON, semester.OVERRIDES_JSON = self.saved
+        semester.COURSES_JSON, semester.OVERRIDES_DB = self.saved
         semester._cache.clear()
-        for p in (self.courses, self.ovs):
+        for p in (self.courses, self.ovs, self.ovs + '-wal', self.ovs + '-shm',
+                  overrides_store.legacy_path_for(self.ovs)):
             if os.path.exists(p):
                 os.unlink(p)
         try:
@@ -131,17 +133,71 @@ class OverrideStorageTest(OverrideBase):
         semester.save_overrides(ov)
         self.assertEqual(semester.load_overrides(), ov)
 
-    def test_broken_file_does_not_crash(self):
-        with open(self.ovs, 'w', encoding='utf-8') as f:
-            f.write('{ not json')
-        self.assertEqual(semester.load_overrides(), [])
-
-    def test_entries_without_required_fields_are_dropped(self):
-        with open(self.ovs, 'w', encoding='utf-8') as f:
+    def test_legacy_json_is_imported_once_and_renamed(self):
+        """旧版把调课存成 config/overrides.json，第一次开库要导进 SQLite。"""
+        legacy = overrides_store.legacy_path_for(self.ovs)
+        with open(legacy, 'w', encoding='utf-8') as f:
             json.dump({'overrides': [{'name': 'X'}, {'fromDate': '2026-10-26'},
                                      {'name': '编译原理', 'fromDate': '2026-10-26',
                                       'fromPeriod': 1, 'type': 'cancel'}]}, f)
-        self.assertEqual(len(semester.load_overrides()), 1)
+        items = semester.load_overrides()
+        self.assertEqual(len(items), 1)                      # 残缺的两条被丢掉
+        self.assertEqual(items[0]['name'], '编译原理')
+        self.assertFalse(os.path.exists(legacy))             # 原名让位给 db
+        self.assertTrue(os.path.exists(legacy + '.migrated'))  # 原件留着当备份
+
+    def test_broken_legacy_json_does_not_crash(self):
+        legacy = overrides_store.legacy_path_for(self.ovs)
+        with open(legacy, 'w', encoding='utf-8') as f:
+            f.write('{ not json')
+        self.assertEqual(semester.load_overrides(), [])
+
+    def test_upsert_keeps_one_row_per_source(self):
+        item = {'name': '编译原理', 'fromDate': '2026-10-26', 'fromPeriod': 1,
+                'type': 'cancel'}
+        overrides_store.upsert(item, semester.OVERRIDES_DB)
+        overrides_store.upsert(dict(item, type='move', toDate='2026-10-30',
+                                    toPeriod=5), semester.OVERRIDES_DB)
+        items = semester.load_overrides()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['type'], 'move')
+
+    def test_revision_increases_on_every_write(self):
+        r0 = overrides_store.revision(semester.OVERRIDES_DB)
+        _, r1 = overrides_store.append({'name': 'A', 'fromDate': '2026-10-26',
+                                        'fromPeriod': 1, 'type': 'cancel'},
+                                       semester.OVERRIDES_DB)
+        _, r2 = overrides_store.clear(semester.OVERRIDES_DB)
+        self.assertEqual((r1, r2), (r0 + 1, r0 + 2))
+
+    def test_revision_conflict_is_reported(self):
+        _, rev = overrides_store.append({'name': 'A', 'fromDate': '2026-10-26',
+                                         'fromPeriod': 1, 'type': 'cancel'},
+                                        semester.OVERRIDES_DB)
+        with self.assertRaises(overrides_store.RevisionConflict):
+            overrides_store.replace_if_revision([], rev - 1, semester.OVERRIDES_DB)
+
+
+class ConcurrencyTest(OverrideBase):
+    def test_parallel_appends_do_not_lose_updates(self):
+        """旧实现是「读整份 → 改 → 写整份」，并发请求会互相覆盖。
+        现在每条写入各自一个 IMMEDIATE 事务，一条都不该少。"""
+        import threading
+
+        n = 24
+
+        def work(i):
+            overrides_store.append(
+                {'name': '课%d' % i, 'fromDate': '2026-10-26', 'fromPeriod': 1,
+                 'type': 'cancel'}, semester.OVERRIDES_DB)
+
+        threads = [threading.Thread(target=work, args=(i,)) for i in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(semester.load_overrides()), n)
 
 
 class OverrideApiTest(OverrideBase):

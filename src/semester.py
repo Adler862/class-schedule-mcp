@@ -20,18 +20,28 @@
 """
 import os
 import re
+import sys
 import json
 import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(BASE_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+import overrides_store  # noqa: E402
 
 DEFAULT_SEMESTER_START = datetime.date(2026, 8, 31)
 
 COURSES_JSON = os.environ.get('SCHEDULE_COURSES') or os.path.join(
     REPO_ROOT, 'config', 'courses.json')
 
-# 调课例外。不存在就是「没有任何调课」，不需要预先创建文件。
+# 调课例外存在 SQLite 里（见 overrides_store.py）。文件不存在就是「没有任何调课」，
+# 第一次写入时自动建库；旧的 config/overrides.json 会被一次性导入并改名备份。
+OVERRIDES_DB = os.environ.get('SCHEDULE_OVERRIDES_DB') or os.path.join(
+    REPO_ROOT, 'config', 'overrides.db')
+
+# 兼容旧名字：外部脚本/文档里提到过 config/overrides.json，指向迁移前的路径
 OVERRIDES_JSON = os.environ.get('SCHEDULE_OVERRIDES') or os.path.join(
     REPO_ROOT, 'config', 'overrides.json')
 
@@ -202,31 +212,18 @@ def _entry(course, table=None):
 
 
 def load_overrides(path=None):
-    """读调课例外。文件不存在或坏掉都当作「没有调课」，不该因此让整页挂掉。"""
-    path = path or OVERRIDES_JSON
-    if not os.path.exists(path):
-        return []
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return []
-    items = data.get('overrides') if isinstance(data, dict) else data
-    if not isinstance(items, list):
-        return []
-    return [o for o in items if isinstance(o, dict) and o.get('name') and o.get('fromDate')]
+    """读调课例外。库不存在或坏掉都当作「没有调课」，不该因此让整页挂掉。"""
+    return overrides_store.load(path or OVERRIDES_DB)
 
 
 def save_overrides(items, path=None):
-    """写调课例外：先写临时文件再替换，避免写一半断电留下坏 JSON。"""
-    path = path or OVERRIDES_JSON
-    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
-    tmp = path + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump({'overrides': items}, f, ensure_ascii=False, indent=2)
-        f.write('\n')
-    os.replace(tmp, path)
-    return items
+    """整份替换（兼容旧接口）。单条增删请用 overrides_store.append / upsert / undo。"""
+    return overrides_store.replace(items, path or OVERRIDES_DB)[0]
+
+
+def load_overrides_with_revision(path=None):
+    """→ (列表, revision)。给 HTTP 层用，客户端可据此判断「别人改过没有」。"""
+    return overrides_store.load_with_revision(path or OVERRIDES_DB)
 
 
 def _ov_key(name, date, period):

@@ -20,6 +20,7 @@ if BASE_DIR not in os.sys.path:
     os.sys.path.insert(0, BASE_DIR)
 
 import semester  # noqa: E402
+import overrides_store  # noqa: E402
 
 DAY_CHARS = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 7, '天': 7,
              '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7}
@@ -98,7 +99,9 @@ def handle(method, path, query=None, body=None, root=None, today=None):
         return _json(_day_payload(day, today))
 
     if path == '/api/overrides':
-        return _json({'overrides': semester.load_overrides()})
+        items, rev = semester.load_overrides_with_revision()
+        # revision 给需要判断「别人改过没有」的客户端用；现有页面忽略它也不受影响
+        return _json({'overrides': items, 'revision': rev})
 
     if path == '/api/ask':
         q = _first(query, 'q', '') or ''
@@ -325,21 +328,19 @@ def _post_overrides(body):
         return _json({'error': '请求体必须是对象'}, 400)
 
     action = req.get('action')
-    items = semester.load_overrides()
+    db = semester.OVERRIDES_DB
 
     if action == 'clear':
-        semester.save_overrides([])
-        return _json({'overrides': []})
+        items, rev = overrides_store.clear(db)
+        return _json({'overrides': items, 'revision': rev})
 
     if action == 'undo':
         missing = [k for k in ('name', 'fromDate', 'fromPeriod') if not req.get(k)]
         if missing:
             return _json({'error': '缺少字段：' + '、'.join(missing)}, 400)
-        kept = [o for o in items
-                if not (o['name'] == req['name'] and o['fromDate'] == req['fromDate']
-                        and int(o['fromPeriod']) == int(req['fromPeriod']))]
-        semester.save_overrides(kept)
-        return _json({'overrides': kept})
+        items, rev = overrides_store.undo(req['name'], req['fromDate'],
+                                          int(req['fromPeriod']), db)
+        return _json({'overrides': items, 'revision': rev})
 
     if action not in ('move', 'cancel'):
         return _json({'error': "action 只能是 move / cancel / undo / clear"}, 400)
@@ -373,12 +374,9 @@ def _post_overrides(body):
     except (TypeError, ValueError):
         return _json({'error': '日期或节次格式不对'}, 400)
 
-    kept = [o for o in items
-            if not (o['name'] == entry['name'] and o['fromDate'] == entry['fromDate']
-                    and int(o['fromPeriod']) == int(entry['fromPeriod']))]
-    kept.append(entry)
-    semester.save_overrides(kept)
-    return _json({'overrides': kept})
+    # 单条写入走事务（先删同源再插），不再「读整份 → 改 → 写整份」
+    items, rev = overrides_store.upsert(entry, db)
+    return _json({'overrides': items, 'revision': rev})
 
 
 def _match_course(q):

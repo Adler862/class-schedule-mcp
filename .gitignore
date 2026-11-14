@@ -8,8 +8,14 @@ output/
 .DS_Store
 
 # 调课记录属个人数据，只在本地，不提交
+# 现在存在 SQLite 里（WAL 模式会多出 -wal / -shm 两个伴生文件）
+config/overrides.db
+config/overrides.db-wal
+config/overrides.db-shm
+# 迁移前的旧 JSON 与迁移备份
 config/overrides.json
 config/overrides.json.tmp
+config/overrides.json.migrated
 
 # 3D 页的构建依赖（three / esbuild），不提交
 web3d/node_modules/
