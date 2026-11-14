@@ -317,6 +317,56 @@ const bodyGeo = new THREE.BoxGeometry(W, H, T);
 const capGeo = new THREE.BoxGeometry(W * 0.82, 0.022, T * 0.82);
 const labelGeo = new THREE.PlaneGeometry(T, H);
 
+/* ---------- 后排合批 ----------
+   架子的纵深是 6 排，但只有第 0 排需要真模型、需要拾取、需要单独抬升；
+   第 1-5 排只是"后面还有档案"的视觉填充。
+   按原来的做法，每列后排是 5 个 BoxGeometry + 6 个材质槽 = 30 个 draw call，
+   51 列就是 1530 个——实测整页 1240 次绘制里绝大部分花在这里。
+
+   合并成一个带顶点色的网格：位置按 -r*T 烘进几何，逐面颜色（侧/顶/纸）
+   烘成顶点色，所以几何只有一份（51 列共用），draw call 每列只留 1 个。
+
+   为什么不用 InstancedMesh：每列的材质透明度是**逐列动画**的（详情态把
+   其余档案压到 0.06，空周常驻 0.82），实例化只能一份材质，per-instance
+   alpha 需要自定义着色器，而且整块会掉进透明队列失去逐物体深度排序——
+   那正是当初"前面的脊透出后面的脊"那个 bug。
+   合并几何保留了每列独立的材质，透明度照样能单独动。 */
+function buildBackGeo(backRows) {
+  const C_SIDE = new THREE.Color(0xe9e5dc);   // 与 m.side 同色
+  const C_TOP = new THREE.Color(0xded8cb);    // 与 m.top 同色
+  const C_FACE = new THREE.Color(0xf7f5f0);   // 脊面纸色（原本是纹理，后排被挡住，退成底色）
+  /* BoxGeometry 的六个面顺序是 +x -x +y -y +z -z，转成非索引后每个面 6 个顶点 */
+  const FACE_COLOR = [C_SIDE, C_SIDE, C_TOP, C_SIDE, C_FACE, C_SIDE];
+  const tmpl = new THREE.BoxGeometry(W, H, T).toNonIndexed();
+  const basePos = tmpl.attributes.position.array;
+  const baseNor = tmpl.attributes.normal.array;
+  const perFace = basePos.length / 3 / 6;
+
+  const pos = new Float32Array(basePos.length * backRows);
+  const nor = new Float32Array(baseNor.length * backRows);
+  const col = new Float32Array(baseNor.length * backRows);
+  for (let r = 0; r < backRows; r++) {
+    const vo = r * basePos.length;
+    for (let i = 0; i < basePos.length; i += 3) {
+      pos[vo + i] = basePos[i];
+      pos[vo + i + 1] = basePos[i + 1];
+      pos[vo + i + 2] = basePos[i + 2] - (r + 1) * T;
+      nor[vo + i] = baseNor[i];
+      nor[vo + i + 1] = baseNor[i + 1];
+      nor[vo + i + 2] = baseNor[i + 2];
+      const c = FACE_COLOR[Math.floor(i / 3 / perFace)];
+      col[vo + i] = c.r; col[vo + i + 1] = c.g; col[vo + i + 2] = c.b;
+    }
+  }
+  tmpl.dispose();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeBoundingSphere();
+  return g;
+}
+
 /* 长侧面的标签：档案正对观者时才看得见。
    没有它，抽出来的就是一块空白板——脊上那点 NO.xx 是印在窄端的，
    一转身就背过去了。 */
@@ -502,6 +552,9 @@ const rails = [];
 const pickables = [];
 const weekMats = new Map();
 
+/* 后排合批几何：51 列共用一份 */
+const backGeo = buildBackGeo(ROWS - 1);
+
 /* 确定性伪随机：同一个下标永远同一个值，不引入 Math.random，
    否则每次刷新高度都会变，调好的构图就白调了。 */
 function pseudo(n) {
@@ -562,7 +615,8 @@ for (let c = 0; c < RAIL_N; c++) {
   const rail = {
     col: c, week: w, x: 0, busy: m.busy,
     baseY: (H * m.hRatio * jit) / 2,
-    holders: [], body: null, cap: null,
+    jit,
+    holders: [], body: null, cap: null, back: null, backMat: null,
     hRatio: m.hRatio,
     mats: [m.side, m.face, m.top, m.cap],
     printMat: m.print,
@@ -571,54 +625,68 @@ for (let c = 0; c < RAIL_N; c++) {
     _op: -1,
     lift: 0, ex: 0, spring: { value: 0, velocity: 0 },
   };
-  for (let r = 0; r < ROWS; r++) {
-    /* 前排用 Blender 出的真模型（倒角 + 一层纸 + 顶部夹），
-       后排还是程序化盒子——后排永远只露个边，没必要上精模。 */
-    let body;
-    if (r === 0 && PARTS && PARTS.archive_body) {
-      body = new THREE.Mesh(PARTS.archive_body, [m.side, m.side]);
-      if (PARTS.archive_face) {
-        const sheet = new THREE.Mesh(PARTS.archive_face, m.print);
-        body.add(sheet);
-      }
-      if (PARTS.archive_clip) {
-        const clip = new THREE.Mesh(PARTS.archive_clip, m.top);
-        body.add(clip);
-      }
-    } else {
-      body = new THREE.Mesh(bodyGeo, [m.side, m.side, m.top, m.side, m.face, m.side]);
-    }
-    body.castShadow = r === 0;
-    body.receiveShadow = true;
-    body.scale.y = m.hRatio * jit;
 
-    const holder = new THREE.Group();
-    holder.position.set(0, rail.baseY, -r * T);
-    holder.add(body);
+  /* 后排（第 1-5 排）一次画完。几何共享、材质每列一份——
+     透明度要跟着这一列单独淡，这是合并批而不是实例化的原因。 */
+  const backMat = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.9, metalness: 0,
+    transparent: rail.baseOpacity < 0.999,
+    depthWrite: rail.baseOpacity > 0.96,
+    opacity: rail.baseOpacity,
+  });
+  const back = new THREE.Mesh(backGeo, backMat);
+  back.position.set(0, rail.baseY, 0);
+  back.scale.y = m.hRatio * jit;
+  back.receiveShadow = true;
+  group.add(back);
+  rail.back = back;
+  rail.backMat = backMat;
 
-    /* 脊顶色标只有最前排看得见，后排建了也是被挡住，白占 250 多个 draw */
-    if (r === 0) {
-      const cap = new THREE.Mesh(capGeo, m.cap);
-      cap.position.set(0, H / 2 + 0.012, 0);
-      cap.castShadow = true;
-      body.add(cap);
+  /* 前排：Blender 出的真模型（倒角 + 一层纸 + 顶部夹）。
+     没有 GLB 时退回程序化盒子。 */
+  let body;
+  if (PARTS && PARTS.archive_body) {
+    body = new THREE.Mesh(PARTS.archive_body, [m.side, m.side]);
+    if (PARTS.archive_face) {
+      const sheet = new THREE.Mesh(PARTS.archive_face, m.print);
+      body.add(sheet);
     }
+    if (PARTS.archive_clip) {
+      const clip = new THREE.Mesh(PARTS.archive_clip, m.top);
+      body.add(clip);
+    }
+  } else {
+    body = new THREE.Mesh(bodyGeo, [m.side, m.side, m.top, m.side, m.face, m.side]);
+  }
+  body.castShadow = true;
+  body.receiveShadow = true;
+  body.scale.y = m.hRatio * jit;
 
-    group.add(holder);
-    rail.holders.push(holder);
-    if (r === 0) {
-      /* 长侧面标签贴在 +x 面上：架子上看是极薄的一条边（等于看不见），
-         抽出来转正之后才整个露出来。 */
-      const labelMat = labelMaterial(w);
-      const front = new THREE.Mesh(labelGeo, labelMat);
-      front.visible = false;   // 课表改贴 GLB 的纸面，这层留着只作回退
-      body.add(front);
-      rail.label = front;
-      rail.labelMat = labelMat;
-      rail.body = body;
-      pickables.push(body);
-      body.userData.rail = rail;
-    }
+  const holder = new THREE.Group();
+  holder.position.set(0, rail.baseY, 0);
+  holder.add(body);
+
+  {
+    const cap = new THREE.Mesh(capGeo, m.cap);
+    cap.position.set(0, H / 2 + 0.012, 0);
+    cap.castShadow = true;
+    body.add(cap);
+  }
+
+  group.add(holder);
+  rail.holders.push(holder);
+  {
+    /* 长侧面标签贴在 +x 面上：架子上看是极薄的一条边（等于看不见），
+       抽出来转正之后才整个露出来。 */
+    const labelMat = labelMaterial(w);
+    const front = new THREE.Mesh(labelGeo, labelMat);
+    front.visible = false;   // 课表改贴 GLB 的纸面，这层留着只作回退
+    body.add(front);
+    rail.label = front;
+    rail.labelMat = labelMat;
+    rail.body = body;
+    pickables.push(body);
+    body.userData.rail = rail;
   }
   rails.push(rail);
 }
@@ -1347,6 +1415,13 @@ function tick(now) {
       r.printMat.transparent = dim < 0.999;
       r.printMat.opacity = dim;
     }
+    /* 后排合批网格跟着同一套透明度走，否则详情态它会留在原亮度 */
+    const bop = r.baseOpacity * dim;
+    if (Math.abs(r.backMat.opacity - bop) > 0.004) {
+      r.backMat.opacity = bop;
+      r.backMat.transparent = bop < 0.999;
+      r.backMat.depthWrite = bop > 0.96;
+    }
 
     /* 只有第 0 排会抬、会拔；**不转身**——转的是镜头，不是档案。
        后排是背景，跟着横向滑动就够。 */
@@ -1365,13 +1440,12 @@ function tick(now) {
        而且它不吃 dim，会变成几块飘在画面里的白牌子。 */
     if (r.tag) r.tag.visible = ck < 0.35;
     r.labelMat.opacity = e2;
-    for (let row = 1; row < ROWS; row++) {
-      const h = r.holders[row];
-      h.position.set(r.x, r.baseY, -row * T);
-      /* 焦点那一根的"纵深副本"是假的：抽出来之后如果还留着，
-         它们在侧视里会并排成一堵墙，把主体自己埋掉。 */
-      h.visible = !(isFocus && ck > 0.15);
-    }
+    r.back.position.x = r.x;
+    r.back.position.y = r.baseY;
+    r.back.scale.y = r.hRatio * r.jit;
+    /* 焦点那一根的"纵深副本"是假的：抽出来之后如果还留着，
+       它们在侧视里会并排成一堵墙，把主体自己埋掉。 */
+    r.back.visible = !(isFocus && ck > 0.15);
   }
 
   /* 镜头绕过去看：位置走球面弧线，注视点在圆心上再往右挪一点，
@@ -1448,3 +1522,25 @@ if (qw >= 1 && qw <= PERIOD) {
 try { tick(performance.now()); } catch (e) { document.title = 'TICK ' + e.message; }
 renderer.setAnimationLoop(tick);
 window.__sceneReady = true;
+
+/* 性能探针：给 e2e 量 draw call / 纹理占用，不参与渲染。
+   纹理字节数按「canvas 宽×高×4」估，不含 mipmap 的 1/3。 */
+window.__stats = function () {
+  let labelBytes = 0, labelPx = 0;
+  for (const t of labelTex.values()) {
+    const im = t.image;
+    if (im && im.width) { labelBytes += im.width * im.height * 4; labelPx += im.width * im.height; }
+  }
+  return {
+    calls: renderer.info.render.calls,
+    triangles: renderer.info.render.triangles,
+    textures: renderer.info.memory.textures,
+    geometries: renderer.info.memory.geometries,
+    programs: renderer.info.programs ? renderer.info.programs.length : null,
+    labelTextures: labelTex.size,
+    labelBytes: labelBytes,
+    labelPixels: labelPx,
+    meshes: (function n(o) { let k = 0; o.traverse(x => { if (x.isMesh) k++; }); return k; })(scene),
+    rows: ROWS, columns: rails.length,
+  };
+};
