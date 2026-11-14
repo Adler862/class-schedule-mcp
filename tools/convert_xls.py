@@ -1,220 +1,714 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-示例大学教务处课表转换器
-将 .xls/.xlsx 课表文件转换为小程序可导入的 JSON 格式
+"""教务系统课表转换器：.xls / .xlsx → courses.json
+
+三件事，按重要性排：
+
+1. **表格长什么样是配置，不是代码。**
+   表头在第几行、星期列怎么认、节次标签什么格式、单元格里哪一行是地点——
+   各校导出都不一样，全在 DEFAULT_LAYOUT 里。换一所学校正常只改 JSON：
+
+       python tools/convert_xls.py --print-layout > my-school.json
+       # 改完
+       python tools/convert_xls.py 课表.xls --layout my-school.json --start 2026-08-31
+
+2. **解析过程留下可定位的诊断。**
+   每条问题都带 sheet / 行列 / 原文 / 命中规则。以前「周次写成 2-1」只会变成
+   一门没有周次的课，然后整学期不出现，没人知道为什么；现在会直接告诉你
+   `[W] R4C2 cell.week_range_reversed：周次区间「2-1」是倒序的`。
+
+3. **纯函数与 IO 分开。**
+   `parse_sheet(rows)` 只吃二维数组，测试不用造 .xls；
+   `read_sheet(path)` 负责把文件读成二维数组。解析器因此可以在没有 xlrd
+   的环境里被完整测试。
 
 用法：
-  python convert_xls.py 学生个人课表_xxx.xlsx
-
-输出：
-  schedule_data.json —— 可直接在小程序中导入
+  python tools/convert_xls.py 课表.xls --start 2026-08-31 --out config/mine.json
+  python tools/convert_xls.py 课表.xls --layout 我校.json --strict
+  python tools/convert_xls.py --print-layout
 """
 
-import sys, os, re, json
+import os
+import re
+import sys
+import copy
+import json
+import datetime
+
+# ---------------------------------------------------------------------------
+# 布局规则：一个学校的导出格式 = 这一份 JSON
+# ---------------------------------------------------------------------------
+
+MAX_WEEK = 30          # 超出这个范围的周次基本是解析错了，只报不拦
+
+DEFAULT_LAYOUT = {
+    'version': 1,
+    'meta': {
+        # 标题/学期/打印日期只在前几行出现，扫全表既慢又容易误命中
+        'scanRows': 3,
+        'studentMarkers': ['学生个人课表'],
+        'semesterMarkers': ['学年学期'],
+        'printDateRegex': r'打印日期[：:]\s*(\d{4}-\d{2}-\d{2})',
+    },
+    'header': {
+        # 星期标签 → 数字。各校写法不同，这里列全，多写不亏
+        'labels': {
+            '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4,
+            '星期五': 5, '星期六': 6, '星期日': 7, '星期天': 7,
+            '周一': 1, '周二': 2, '周三': 3, '周四': 4,
+            '周五': 5, '周六': 6, '周日': 7, '周天': 7,
+            '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 7,
+        },
+        # 一行里认出这么多星期列才算表头（五天工作制的学校可以调低到 5）
+        'minColumns': 5,
+        # 表头只在前面这些行里找。导出文件常有几十行空模板，扫全表会认错
+        'searchRows': 15,
+        # 显式列映射 {"1": 1, "2": 2, ...}（星期 → 列号，0 基）。
+        # null 表示自动发现；学校布局怪异时填这个，就不用猜
+        'columns': None,
+    },
+    'periods': {
+        'column': 0,                       # 节次标签在哪一列
+        'labelRegex': r'(?:第)?([一二三四五六七八九十]+|\d+)\s*大节',
+        'labelMustContain': ['大节', '小节'],   # 收紧条件，避免把别的行认成节次行
+        'rows': None,                      # 显式行号列表（0 基）；null 表示扫描
+        'subPeriods': 2,                   # 每个大节包含几个小节
+        'numberFromLabel': True,           # 节次编号取标签（「第三大节」→3）而不是行序
+    },
+    'cell': {
+        'blockSeparator': r'\n\s*\n',      # 一个格子里多门课，用空行分隔
+        # 逐行分类。按顺序试，先命中先生效；regex 与 anyOf 同时存在时两个都要满足
+        'lineRules': [
+            {'role': 'note', 'regex': r'^\([^)]+\)$', 'maxLength': 20},
+            # 周次 + 节次写在同一行是最常见的形状
+            {'role': 'period', 'regex': r'\[\d{1,2}[-–,，]\d{1,2}节\]'},
+            # 只有周次、没写节次（如「3,5,7,9([双周])」）。单独一条，顺序在 period 之后。
+            # 周字前面必须有数字或「第」，否则「周易研究」这种课名会被当成周次
+            {'role': 'weeks',
+             'regex': r'(?:[\d一二三四五六七八九十第,，\-–至]+\s*[\[\(（]*\s*[单双]?\s*周)'
+                      r'|(?:^[单双]周$)'},
+            {'role': 'location', 'anyOf': ['校区', '楼', '机房', '外语']},
+        ],
+        # 没被规则认领的行，按这个顺序当作课程名、教师
+        'fieldOrder': ['name', 'teacher'],
+    },
+    'defaults': {
+        'startWeek': 1,
+        'totalWeeks': 20,
+        'weekType': 'all',
+    },
+}
+
+# 兼容旧名字：外部脚本可能 import 过 COMPOUND_SURNAMES
+# 复姓表：只列常见的，判不出来就按单姓取首字，宁可粗一点也不要漏
+COMPOUND_SURNAMES = ('欧阳', '司马', '上官', '诸葛', '东方', '独孤', '慕容', '令狐',
+                     '皇甫', '尉迟', '公孙', '长孙', '宇文', '司徒', '夏侯', '轩辕',
+                     '端木', '澹台', '南宫', '西门')
+
+ERROR, WARNING, INFO = 'error', 'warning', 'info'
+
+
+# ---------------------------------------------------------------------------
+# 诊断
+# ---------------------------------------------------------------------------
+
+class Diagnostic:
+    """一条可定位的问题。
+
+    row / col 是 0 基（内部用），对外显示时 +1 变成 R4C2 这种人能读的坐标。
+    rule 记录是哪条规则判的，换学校改配置时这一栏最有用。
+    """
+
+    __slots__ = ('severity', 'code', 'message', 'rule', 'sheet', 'row', 'col', 'snippet')
+
+    def __init__(self, severity, code, message, rule='', sheet='',
+                 row=None, col=None, snippet=''):
+        self.severity = severity
+        self.code = code
+        self.message = message
+        self.rule = rule
+        self.sheet = sheet
+        self.row = row
+        self.col = col
+        self.snippet = snippet
+
+    @property
+    def cell(self):
+        if self.row is None:
+            return ''
+        if self.col is None:
+            return f'R{self.row + 1}'
+        return f'R{self.row + 1}C{self.col + 1}'
+
+    def as_dict(self):
+        return {
+            'severity': self.severity, 'code': self.code, 'message': self.message,
+            'rule': self.rule, 'sheet': self.sheet, 'cell': self.cell,
+            'row': self.row, 'col': self.col, 'snippet': self.snippet,
+        }
+
+    def __str__(self):
+        tag = {ERROR: 'E', WARNING: 'W', INFO: 'I'}.get(self.severity, '?')
+        where = f'{self.cell} ' if self.cell else ''
+        rule = f'（规则 {self.rule}）' if self.rule else ''
+        snip = f'：{self.snippet}' if self.snippet else ''
+        return f'[{tag}] {where}{self.code}{rule} {self.message}{snip}'
+
+
+def _diag(diags, severity, code, message, **kw):
+    """收集诊断。diags 为 None 时什么也不做——纯函数调用方不必关心。"""
+    if diags is None:
+        return
+    diags.append(Diagnostic(severity, code, message, **kw))
+
+
+def summarize(diags):
+    """→ {'error': n, 'warning': n, 'info': n, 'total': n}"""
+    out = {ERROR: 0, WARNING: 0, INFO: 0}
+    for d in diags or []:
+        out[d.severity] = out.get(d.severity, 0) + 1
+    out['total'] = len(diags or [])
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 布局加载
+# ---------------------------------------------------------------------------
+
+def _deep_merge(base, over):
+    out = dict(base)
+    for k, v in (over or {}).items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            out[k] = _deep_merge(base[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def load_layout(source=None):
+    """默认布局 / 部分覆盖的 dict / JSON 文件路径 → 完整布局。
+
+    做深合并而不是整体替换：只想改一个标签的学校不必复制整份配置。
+    """
+    layout = copy.deepcopy(DEFAULT_LAYOUT)
+    if source is None:
+        return layout
+    if isinstance(source, dict):
+        return _deep_merge(layout, source)
+    with open(source, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f'布局文件必须是一个 JSON 对象：{source}')
+    return _deep_merge(layout, data)
+
+
+def dump_layout(layout=None):
+    """布局 → 可读 JSON 文本（--print-layout 用）。"""
+    return json.dumps(layout or DEFAULT_LAYOUT, ensure_ascii=False, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# 读文件
+# ---------------------------------------------------------------------------
+
+def _txt(value):
+    """单元格值 → 字符串。None 变成空串，而不是 "None"。"""
+    if value is None:
+        return ''
+    return str(value)
+
+
+def _read_with_xlrd(filepath):
+    import xlrd
+    wb = xlrd.open_workbook(filepath, encoding_override='gbk')
+    ws = wb.sheet_by_index(0)
+    rows = [[ws.cell_value(r, c) for c in range(ws.ncols)] for r in range(ws.nrows)]
+    return rows, ws.name
+
+
+def _read_with_openpyxl(filepath):
+    import openpyxl
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+    rows = [[cell for cell in row]
+            for row in ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True)]
+    return rows, ws.title
+
+
+def read_sheet(filepath):
+    """→ (rows, sheet_name)。rows 是二维数组，含表头与空行，保留原坐标。"""
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == '.xls':
+        return _read_with_xlrd(filepath)
+    if ext == '.xlsx':
+        # .xlsx 后缀有时其实是旧版 .xls（导出工具会干这事），先按 xls 试
+        try:
+            return _read_with_xlrd(filepath)
+        except Exception:
+            return _read_with_openpyxl(filepath)
+    raise ValueError(f'不支持的文件格式: {ext}')
+
 
 def read_excel(filepath):
-    """读取 xls 或 xlsx 文件，自动检测格式"""
-    ext = os.path.splitext(filepath)[1].lower()
-
-    # 先尝试 xlrd (支持真正的 .xls)
-    if ext in ('.xls',):
-        import xlrd
-        wb = xlrd.open_workbook(filepath, encoding_override='gbk')
-        ws = wb.sheet_by_index(0)
-        rows = []
-        for r in range(ws.nrows):
-            row = []
-            for c in range(ws.ncols):
-                row.append(ws.cell_value(r, c))
-            rows.append(row)
-        return rows
-
-    elif ext in ('.xlsx',):
-        # .xlsx 可能是旧版 .xls 伪装，先试 xlrd
-        try:
-            import xlrd
-            wb = xlrd.open_workbook(filepath, encoding_override='gbk')
-            ws = wb.sheet_by_index(0)
-            rows = []
-            for r in range(ws.nrows):
-                row = []
-                for c in range(ws.ncols):
-                    row.append(ws.cell_value(r, c))
-                rows.append(row)
-            return rows
-        except:
-            pass
-
-        # 再试 openpyxl
-        import openpyxl
-        wb = openpyxl.load_workbook(filepath, data_only=True)
-        ws = wb.active
-        rows = []
-        for row in ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True):
-            rows.append([cell or '' for cell in row])
-        return rows
-
-    else:
-        raise ValueError(f'不支持的文件格式: {ext}')
+    """只要二维数组（旧接口，保留）。"""
+    return read_sheet(filepath)[0]
 
 
-def parse_week_info(week_str):
+# ---------------------------------------------------------------------------
+# 小工具
+# ---------------------------------------------------------------------------
+
+_CN_DIGITS = {'零': 0, '一': 1, '二': 2, '三': 3, '四': 4,
+              '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+
+
+def cn_to_int(text):
+    """「一」「十二」「二十」→ 1 / 12 / 20；纯数字直接转；认不出返回 None。"""
+    s = (text or '').strip()
+    if not s:
+        return None
+    if s.isdigit():
+        return int(s)
+    if s in _CN_DIGITS:
+        return _CN_DIGITS[s]
+    if '十' in s:
+        head, _, tail = s.partition('十')
+        if head and head not in _CN_DIGITS:
+            return None
+        if tail and tail not in _CN_DIGITS:
+            return None
+        return (_CN_DIGITS.get(head, 1) if head else 1) * 10 + (_CN_DIGITS.get(tail, 0) if tail else 0)
+    return None
+
+
+def _classify(line, cfg):
+    """按 cell.lineRules 给一行定性，返回 (role, rule_index) 或 (None, None)。"""
+    for idx, rule in enumerate(cfg.get('lineRules') or []):
+        regex = rule.get('regex')
+        any_of = rule.get('anyOf')
+        if not regex and not any_of:
+            continue
+        if regex and not re.search(regex, line):
+            continue
+        if any_of and not any(k in line for k in any_of):
+            continue
+        max_len = rule.get('maxLength')
+        if max_len is not None and len(line) >= int(max_len):
+            continue
+        return rule.get('role'), idx
+    return None, None
+
+
+# ---------------------------------------------------------------------------
+# 单元格解析
+# ---------------------------------------------------------------------------
+
+def _week_number(token):
+    """单个周次 → int。认「3」「03」「第三」「第3周」，认不出返回 None。"""
+    return cn_to_int(re.sub(r'[第周节\s]', '', _txt(token)))
+
+
+# 只匹配「[01-02节]」这个记号本身。
+# 旧实现用 \[.*?节\].* 从第一个方括号一路吃到「节]」，遇到
+# 「1-15([单周])[01-02节]」会把「([单周])」一起吃进去，单双周标记就丢了。
+_PERIOD_TOKEN = re.compile(r'\[?\s*\d{1,2}\s*[-–,，]\s*\d{1,2}\s*节\s*\]?')
+
+
+def _strip_period_token(line):
+    """摘掉节次记号，留下周次部分。"""
+    return _PERIOD_TOKEN.sub('', line).strip()
+
+
+def parse_week_info(week_str, diags=None, row=None, col=None, sheet=''):
+    """周次字符串 → (weeks, week_type)。
+
+    支持 "2-17([周])" "3,5,7,9([周])" "5,7,9([单周])" "2,4-13([周])"。
+    区间倒序、越界都只报警告不抛异常：一张课表不该因为一个格子整份失败，
+    但也不能悄悄变成「这门课整学期不上」。
     """
-    解析周次字符串，返回 (weeks_list, week_type)
-    支持格式:
-      "2-17([周])"   "3,5,7,9([周])"   "5,7,9([单周])"   "2,4-13([周])"
-    """
-    week_str = week_str.strip()
+    week_str = _txt(week_str).strip()
 
-    # 提取周类型
     week_type = 'all'
     if '单周' in week_str or '[单]' in week_str:
         week_type = 'odd'
     elif '双周' in week_str or '[双]' in week_str:
         week_type = 'even'
-    elif '[周]' in week_str or '周' in week_str:
-        week_type = 'all'
-    else:
-        week_type = 'all'
 
-    # 去掉方括号和圆括号及内容
+    # 去掉方括号/圆括号及其中内容（周次标记本身）
     week_str = re.sub(r'[\[\(][^\]\)]*[\]\)]', '', week_str).strip()
-
-    # 去掉末尾残留的括号
     week_str = re.sub(r'[\(\)\[\]]', '', week_str).strip()
 
-    # 解析周次列表
     weeks = set()
-    parts = week_str.split(',')
-    for part in parts:
+    from_range = False
+    for part in week_str.split(','):
         part = part.strip()
         if not part:
             continue
-        if '-' in part:
-            try:
-                a, b = part.split('-', 1)
-                start, end = int(a.strip()), int(b.strip())
-                for i in range(start, end + 1):
-                    weeks.add(i)
-            except:
-                pass
+        if re.search(r'[-–至]', part):
+            a, b = re.split(r'[-–至]', part, maxsplit=1)
+            lo, hi = _week_number(a), _week_number(b)
+            if lo is None or hi is None:
+                _diag(diags, WARNING, 'cell.week_unparsed',
+                      '周次区间无法解析，已跳过', rule='parseWeekInfo',
+                      sheet=sheet, row=row, col=col, snippet=part)
+                continue
+            if hi < lo:
+                _diag(diags, WARNING, 'cell.week_range_reversed',
+                      f'周次区间「{part}」是倒序的，这一段不会产生任何周次',
+                      rule='parseWeekInfo', sheet=sheet, row=row, col=col, snippet=part)
+                continue
+            if lo < 1 or hi > MAX_WEEK:
+                _diag(diags, WARNING, 'cell.week_out_of_range',
+                      f'周次「{part}」超出 1–{MAX_WEEK} 的合理范围',
+                      rule='parseWeekInfo', sheet=sheet, row=row, col=col, snippet=part)
+            weeks.update(range(lo, hi + 1))
+            from_range = True
         else:
-            try:
-                weeks.add(int(part))
-            except:
-                pass
+            n = _week_number(part)
+            if n is None:
+                _diag(diags, WARNING, 'cell.week_unparsed',
+                      '周次「%s」不是数字，已跳过' % part, rule='parseWeekInfo',
+                      sheet=sheet, row=row, col=col, snippet=part)
+                continue
+            if n < 1 or n > MAX_WEEK:
+                _diag(diags, WARNING, 'cell.week_out_of_range',
+                      f'周次 {n} 超出 1–{MAX_WEEK} 的合理范围',
+                      rule='parseWeekInfo', sheet=sheet, row=row, col=col, snippet=part)
+            weeks.add(n)
 
-    return sorted(weeks), week_type
+    # 单双周展开成实际生效的周次。理由：semester.course_active 只要 weeks 非空
+    # 就只看 weeks、忽略 weekType，把 1-15 原样留着，单周课会每周都上。
+    #
+    # 只对「区间」写法展开，不对「枚举」展开：
+    #   1-15([单周])     → 区间 + 单周 → 1,3,…,15（标记是对区间的修饰）
+    #   3,5,7,9([双周])  → 枚举本身就是生效周次 → 原样保留，再筛一次会筛空
+    ordered = sorted(weeks)
+    if from_range and week_type == 'odd':
+        return [w for w in ordered if w % 2 == 1], week_type
+    if from_range and week_type == 'even':
+        return [w for w in ordered if w % 2 == 0], week_type
+    return ordered, week_type
 
 
 def parse_period_info(period_str):
-    """解析节次字符串, 如 "[01-02节]" → (1, 2)"""
-    m = re.search(r'\[?(\d{2})-(\d{2})节\]?', period_str)
-    if m:
-        return int(m.group(1)), int(m.group(2))
-    return 1, 2
+    """「[03-04节]」→ (3, 4)；认不出返回 (None, None)。
 
-
-def parse_cell(cell_text):
+    旧实现认不出时返回 (1, 2)，调用方再用它判断「没写节次」，于是
+    真的写 [01-02节] 的格子和没写的格子无法区分。这里改成 None 表示未声明。
     """
-    解析一个课表单元格中的文本，提取课程列表
-    支持一个单元格中包含多门课程（用空行分隔）
+    m = re.search(r'\[?(\d{1,2})\s*[-–,，]\s*(\d{1,2})\s*节\]?', _txt(period_str))
+    if not m:
+        return None, None
+    return int(m.group(1)), int(m.group(2))
 
-    单元格格式（每门课）:
-      课程名称
-      (可选备注/分组)
-      教师名
-      周次信息([周/单周/双周])[节次信息]
-      地点
-    """
-    if not cell_text or not cell_text.strip():
+
+def _parse_block(lines, layout, diags=None, row=None, col=None, sheet=''):
+    """一个空行分段 → 一门课。认不出课程名就返回 None 并记一条警告。"""
+    cfg = layout['cell']
+    name = teacher = location = note = ''
+    weeks, week_type = [], layout['defaults'].get('weekType', 'all')
+    start_period = end_period = None
+    others = []
+
+    for line in lines:
+        role, _idx = _classify(line, cfg)
+        if role == 'note':
+            note = line.strip('()（）')
+            continue
+        if role in ('period', 'weeks'):
+            sp, ep = parse_period_info(line)
+            if sp is not None:
+                start_period, end_period = sp, ep
+            week_part = _strip_period_token(line)
+            if week_part:
+                if not re.search(r'[\[\(][周单双]', week_part):
+                    week_part += '([周])'
+                weeks, week_type = parse_week_info(week_part, diags, row=row, col=col, sheet=sheet)
+            continue
+        if role == 'location':
+            location = line
+            continue
+        others.append(line)
+
+    order = cfg.get('fieldOrder') or ['name', 'teacher']
+    for i, field in enumerate(order):
+        if i >= len(others):
+            break
+        if field == 'name':
+            name = others[i]
+        elif field == 'teacher':
+            teacher = others[i]
+    if len(others) > len(order):
+        _diag(diags, WARNING, 'cell.extra_lines',
+              f'有 {len(others) - len(order)} 行没被任何规则认领，已忽略',
+              rule='cell.fieldOrder', sheet=sheet, row=row, col=col,
+              snippet=' / '.join(others[len(order):]))
+
+    if not name:
+        _diag(diags, WARNING, 'cell.no_name',
+              '这一段认不出课程名，整段已丢弃', rule='cell.fieldOrder',
+              sheet=sheet, row=row, col=col, snippet=' / '.join(lines))
+        return None
+
+    if not weeks:
+        sw = layout['defaults'].get('startWeek', 1)
+        tw = layout['defaults'].get('totalWeeks', 20)
+        _diag(diags, WARNING, 'cell.no_week_info',
+              f'「{name}」没有周次信息，会按默认 {sw}–{sw + tw - 1} 周处理，可能不是真实周次',
+              rule='cell.lineRules', sheet=sheet, row=row, col=col, snippet=' / '.join(lines))
+
+    return {
+        'name': name, 'teacher': teacher, 'location': location,
+        'weeks': weeks, 'weekType': week_type,
+        'startPeriod': start_period, 'endPeriod': end_period, 'note': note,
+    }
+
+
+def parse_cell(cell_text, layout=None, diags=None, row=None, col=None, sheet=''):
+    """一个课表格子 → 课程列表。一个格子可以有多门课（空行分隔）。"""
+    layout = layout or DEFAULT_LAYOUT
+    text = _txt(cell_text).strip()
+    if not text:
         return []
-
-    # 标准化换行符（Excel 可能用 \r\n 或 \r）
-    text = cell_text.strip()
     text = text.replace('\r\n', '\n').replace('\r', '\n')
+
     courses = []
-
-    # 按空行分割多门课程
-    blocks = re.split(r'\n\s*\n', text)
-
-    for block in blocks:
+    for block in re.split(layout['cell']['blockSeparator'], text):
         block = block.strip()
         if not block:
             continue
-
         lines = [l.strip() for l in block.split('\n') if l.strip()]
         if not lines:
             continue
-
-        # 分类每一行
-        name = ''
-        teacher = ''
-        location = ''
-        weeks = []
-        week_type = 'all'
-        start_period = 1
-        end_period = 2
-        note = ''
-        other_lines = []
-
-        for line in lines:
-            # 检测是否是备注行: (...)，短行
-            if re.match(r'^\([^)]+\)$', line) and len(line) < 20:
-                note = line.strip('()')
-                continue
-
-            # 检测周次/节次行
-            if re.search(r'\[\d{2}[-–,]\d{2}节\]', line):
-                # 提取节次
-                sp, ep = parse_period_info(line)
-                start_period, end_period = sp, ep
-
-                # 提取周次部分（节次信息之前）
-                week_part = re.sub(r'\[.*?节\].*', '', line).strip()
-                if week_part:
-                    # 确保包含周类型标记
-                    if not re.search(r'[\[\(][周单双]', week_part):
-                        week_part += '([周])'
-                    weeks, week_type = parse_week_info(week_part)
-                continue
-
-            # 检测地点行（"实验"不在此处，因为很多课名含"实验"）
-            if any(kw in line for kw in ['校区', '楼', '机房', '外语']):
-                location = line
-                continue
-
-            # 收集其他行（课程名/教师）
-            other_lines.append(line)
-
-        # 从 other_lines 中分配课程名和教师
-        if other_lines:
-            # 第一行 → 课程名
-            name = other_lines[0]
-            # 第二行 → 教师（多人用逗号/顿号分隔）
-            if len(other_lines) >= 2:
-                teacher = other_lines[1]
-
-        if name:
-            courses.append({
-                'name': name,
-                'teacher': teacher,
-                'location': location,
-                'weeks': weeks,
-                'weekType': week_type,
-                'startPeriod': start_period,
-                'endPeriod': end_period,
-                'note': note
-            })
-
+        rec = _parse_block(lines, layout, diags, row=row, col=col, sheet=sheet)
+        if rec:
+            courses.append(rec)
     return courses
 
 
-# 复姓表：只列常见的，判不出来就按单姓取首字，宁可粗一点也不要漏
-COMPOUND_SURNAMES = ('欧阳', '司马', '上官', '诸葛', '东方', '独孤', '慕容', '令狐',
-                     '皇甫', '尉迟', '公孙', '长孙', '宇文', '司徒', '夏侯', '轩辕',
-                     '端木', '澹台', '南宫', '西门')
+# ---------------------------------------------------------------------------
+# 表头与节次行
+# ---------------------------------------------------------------------------
+
+def _find_header(rows, layout, diags=None, sheet=''):
+    """→ {'row': r, 'dayCols': {col: day}}；找不到返回 None。"""
+    cfg = layout['header']
+    labels = {str(k): int(v) for k, v in cfg['labels'].items()}
+    min_cols = int(cfg.get('minColumns') or 5)
+    search = min(int(cfg.get('searchRows') or 15), len(rows))
+
+    explicit = cfg.get('columns')
+    if explicit:
+        day_cols = {int(col): int(day) for day, col in explicit.items()}
+        header_row = None
+        for r in range(search):
+            if any(col < len(rows[r]) and _txt(rows[r][col]).strip() in labels
+                   for col in day_cols):
+                header_row = r
+                break
+        if header_row is None:
+            _diag(diags, WARNING, 'header.labels_missing',
+                  '布局里声明了星期列，但没在表里找到对应标签，按声明位置继续',
+                  rule='header.columns', sheet=sheet)
+        return {'row': header_row, 'dayCols': day_cols}
+
+    best = {}
+    best_row = None
+    for r in range(search):
+        found = {}
+        for c, val in enumerate(rows[r]):
+            text = _txt(val).strip()
+            if text in labels:
+                found[c] = labels[text]
+        if len(found) > len(best):
+            best, best_row = found, r
+        if len(found) >= min_cols:
+            if len(found) < 7:
+                _diag(diags, INFO, 'header.partial_week',
+                      f'只认出 {len(found)} 个星期列（共 {len(found)} 天有课）',
+                      rule='header.labels', sheet=sheet, row=r)
+            return {'row': r, 'dayCols': found}
+
+    if best:
+        _diag(diags, ERROR, 'header.too_few_columns',
+              f'第 {best_row + 1} 行只认出 {len(best)} 个星期列，少于要求的 {min_cols} 个',
+              rule='header.minColumns', sheet=sheet, row=best_row)
+    else:
+        _diag(diags, ERROR, 'header.not_found',
+              f'前 {search} 行里没有找到任何星期表头', rule='header.labels', sheet=sheet)
+    return None
+
+
+def _find_period_rows(rows, layout, header_row, diags=None, sheet=''):
+    """→ [(row, label_text)]，按表里出现的顺序。"""
+    cfg = layout['periods']
+    explicit = cfg.get('rows')
+    if explicit:
+        return [(int(r), _txt(rows[int(r)][int(cfg.get('column') or 0)]).strip()
+                 if int(r) < len(rows) else '') for r in explicit]
+
+    col = int(cfg.get('column') or 0)
+    must = [str(k) for k in (cfg.get('labelMustContain') or [])]
+    start = (header_row + 1) if header_row is not None else 0
+
+    out = []
+    for r in range(start, len(rows)):
+        text = _txt(rows[r][col]).strip() if col < len(rows[r]) else ''
+        if all(k in text for k in must):
+            out.append((r, text))
+    return out
+
+
+def _period_number(label, index, layout, diags=None, sheet='', row=None):
+    """节次行 → 第几个大节。取不到就用行序，并记一条警告。"""
+    cfg = layout['periods']
+    if not cfg.get('numberFromLabel', True):
+        return index + 1
+
+    m = re.search(cfg['labelRegex'], label or '')
+    if m:
+        raw = m.group(2) if (m.lastindex or 1) >= 2 else m.group(1)
+        n = cn_to_int(raw)
+        if n:
+            return n
+    _diag(diags, WARNING, 'periods.label_unparsed',
+          '节次标签认不出编号，按行序处理', rule='periods.labelRegex',
+          sheet=sheet, row=row, snippet=label)
+    return index + 1
+
+
+# ---------------------------------------------------------------------------
+# 主流程
+# ---------------------------------------------------------------------------
+
+def parse_sheet(rows, layout=None, sheet_name='', diags=None, start=None,
+                mask_teachers=False, school=None, class_name=None):
+    """二维数组 → {meta, courses}。这是整条转换链的核心，也是唯一需要测的函数。
+
+    diags 传一个 list 进来，诊断会追加到里面；不传就静默（纯函数用法）。
+    """
+    layout = load_layout(layout)
+    rows = [list(r) for r in (rows or [])]
+
+    if not rows:
+        _diag(diags, ERROR, 'sheet.empty', '表格是空的', sheet=sheet_name)
+        return {'error': '表格是空的'}
+
+    header = _find_header(rows, layout, diags, sheet_name)
+    if header is None:
+        return {'error': '未找到课表星期表头，请确认文件格式'}
+
+    day_cols = header['dayCols']
+    header_row = header['row']
+
+    period_rows = _find_period_rows(rows, layout, header_row, diags, sheet_name)
+    if not period_rows:
+        _diag(diags, ERROR, 'periods.not_found',
+              '没有找到任何节次行（第 0 列应含「%s」）'
+              % '」「'.join(layout['periods'].get('labelMustContain') or []),
+              rule='periods.labelMustContain', sheet=sheet_name)
+        return {'error': '未找到「第 N 大节」这类节次行，请确认文件格式'}
+
+    if len(period_rows) < 6:
+        _diag(diags, WARNING, 'periods.few_rows',
+              f'只认出 {len(period_rows)} 个节次行，正常应是 6 个（或按学校作息）',
+              rule='periods.labelMustContain', sheet=sheet_name)
+
+    sub = max(1, int(layout['periods'].get('subPeriods') or 2))
+    all_courses = []
+
+    for idx, (data_row, label) in enumerate(period_rows):
+        n = _period_number(label, idx, layout, diags, sheet_name, data_row)
+        row_sp = (n - 1) * sub + 1
+        row_ep = n * sub
+
+        for col, day in sorted(day_cols.items()):
+            if col >= len(rows[data_row]):
+                continue
+            cell_text = _txt(rows[data_row][col])
+            for course in parse_cell(cell_text, layout, diags,
+                                     row=data_row, col=col, sheet=sheet_name):
+                sp, ep = course['startPeriod'], course['endPeriod']
+                if sp is None:
+                    sp, ep = row_sp, row_ep
+                elif (sp, ep) == (1, 2) and (row_sp, row_ep) != (1, 2):
+                    # 导出里「没写节次」常常就写成了 01-02，以格子所在大节为准
+                    _diag(diags, WARNING, 'cell.period_ambiguous',
+                          f'「{course["name"]}」写的是 01-02 节，与所在大节（{row_sp}-{row_ep}）不符，'
+                          '按所在大节处理', rule='periods.subPeriods',
+                          sheet=sheet_name, row=data_row, col=col)
+                    sp, ep = row_sp, row_ep
+                elif (sp, ep) != (row_sp, row_ep):
+                    _diag(diags, INFO, 'cell.period_mismatch',
+                          f'「{course["name"]}」声明 {sp}-{ep} 节，格子位于第 {n} 大节，按声明处理',
+                          rule='periods.subPeriods',
+                          sheet=sheet_name, row=data_row, col=col)
+
+                all_courses.append({
+                    'name': course['name'],
+                    'teacher': course.get('teacher', ''),
+                    'location': course.get('location', ''),
+                    'day': day,
+                    'startPeriod': sp,
+                    'endPeriod': ep,
+                    'startWeek': layout['defaults'].get('startWeek', 1),
+                    'totalWeeks': layout['defaults'].get('totalWeeks', 20),
+                    'weekType': course.get('weekType', 'all'),
+                    'weeks': course.get('weeks', []),
+                    'note': course.get('note', ''),
+                })
+
+    meta = _extract_meta(rows, layout, sheet_name, diags)
+    if start:
+        meta['semesterStart'] = start
+    elif meta['semesterStart']:
+        _diag(diags, WARNING, 'meta.print_date_used',
+              '未指定 --start，学期起点取自「打印日期」%s，这通常是学期中的某一天，'
+              '算出来的周次会整体偏移' % meta['semesterStart'],
+              rule='meta.printDateRegex', sheet=sheet_name)
+
+    if mask_teachers:
+        for c in all_courses:
+            c['teacher'] = mask_teacher(c.get('teacher'))
+
+    if school and meta['student']:
+        # 标题形如「<校名> <姓名> 学生个人课表」，只换第一段校名，后面保留
+        meta['student'] = re.sub(r'^\s*\S+?(?=\s)', school, meta['student'], count=1)
+
+    if class_name and meta['semester']:
+        meta['semester'] = re.sub(r'班级：\s*\S+', f'班级：{class_name}', meta['semester'])
+
+    meta.update({
+        'convertTime': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        # 时段数 ≠ 课程数：一门课一周可能上 3 次
+        'totalCourses': len({c['name'] for c in all_courses}),
+        'totalSlots': len(all_courses),
+        'teacherMasked': bool(mask_teachers),
+        'sanitized': bool(school or class_name),
+    })
+    return {'meta': meta, 'courses': all_courses}
+
+
+def _extract_meta(rows, layout, sheet_name='', diags=None):
+    cfg = layout['meta']
+    scan = min(int(cfg.get('scanRows') or 3), len(rows))
+    student = semester = print_date = ''
+    for r in range(scan):
+        for val in rows[r]:
+            text = _txt(val)
+            if any(k in text for k in (cfg.get('studentMarkers') or [])):
+                student = text
+            if any(k in text for k in (cfg.get('semesterMarkers') or [])):
+                semester = text
+            m = re.search(cfg['printDateRegex'], text)
+            if m:
+                print_date = m.group(1)
+    if not student and not semester:
+        _diag(diags, INFO, 'meta.not_found',
+              f'前 {scan} 行里没找到「%s」这类标题，标题会留空'
+              % '」「'.join((cfg.get('semesterMarkers') or []) + (cfg.get('studentMarkers') or [])),
+              rule='meta.semesterMarkers', sheet=sheet_name)
+    return {'student': student, 'semester': semester, 'semesterStart': print_date}
 
 
 def mask_teacher(name):
@@ -240,145 +734,44 @@ def mask_teacher(name):
     return '、'.join(out)
 
 
-def convert(filepath, start=None, mask_teachers=False, school=None, class_name=None):
-    """主转换函数
+def convert(filepath, start=None, mask_teachers=False, school=None, class_name=None,
+            layout=None, diagnostics=None):
+    """文件 → {meta, courses}。
 
     start:     学期首周周一 YYYY-MM-DD。导出文件里只有「打印日期」，它可能是学期中
                任意一天，拿来当学期起点会让整学期错位，所以能从外面指定就指定。
-    mask_teachers: 教师姓名换成「姓 + 老师」，其余字段一概不动。
-    school / class_name: 替换标题里的学校和学期行里的班级名。
+    layout:    布局 dict 或 JSON 路径，None 用内建默认。
+    diagnostics: 传 list 进来收诊断（不改输出结构，courses.json 保持干净）。
     """
-    rows = read_excel(filepath)
+    rows, sheet_name = read_sheet(filepath)
+    return parse_sheet(rows, layout=layout, sheet_name=sheet_name, diags=diagnostics,
+                       start=start, mask_teachers=mask_teachers,
+                       school=school, class_name=class_name)
 
-    # 找到课表网格: Row 2 是表头 = 星期一~星期日
-    # Row 3-8 是 第一大节~第六大节, col 1-7 是周一~周日
 
-    # 查找星期行
-    header_row = None
-    day_mapping = {}
-    for r, row in enumerate(rows):
-        for c, val in enumerate(row):
-            val = str(val).strip()
-            if val in ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日', '周日']:
-                if val == '周日':
-                    val = '星期日'
-                day_mapping[c] = val
-        if len(day_mapping) >= 5:
-            header_row = r
-            break
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
-    if header_row is None:
-        return {'error': '未找到课表星期表头，请确认文件格式'}
-
-    # 星期映射为数字
-    day_num = {'星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4,
-               '星期五': 5, '星期六': 6, '星期日': 7}
-
-    # 节次行映射 (row → periods)
-    # 这些行包含 "第一大节" "第二大节" 等
-    # 每行对应2个小节
-    period_rows = []
-    for r in range(header_row + 1, len(rows)):
-        col0 = str(rows[r][0]).strip() if len(rows[r]) > 0 else ''
-        if '大节' in col0 and '小节' in col0:
-            period_rows.append(r)
-
-    all_courses = []
-    semester_info = ''
-    student_info = ''
-
-    # 提取学期信息
-    for r in range(0, min(3, len(rows))):
-        for c, val in enumerate(rows[r]):
-            val = str(val).strip()
-            if '学年学期' in val:
-                semester_info = val
-            if '学生个人课表' in val:
-                student_info = val
-
-    # 遍历课表网格
-    for row_idx, data_row in enumerate(period_rows):
-        # 这个节次行对应2个小节: (row_idx*2+1, row_idx*2+2)
-        sp = row_idx * 2 + 1
-        ep = row_idx * 2 + 2
-
-        for col in day_mapping:
-            day = day_num.get(day_mapping[col], col)
-            if col >= len(rows[data_row]):
-                continue
-            cell_text = str(rows[data_row][col])
-            courses = parse_cell(cell_text)
-
-            for course in courses:
-                course['day'] = day
-                # 如果单元格解析没有提取到节次，使用默认
-                if course.get('startPeriod', 1) == 1 and course.get('endPeriod', 2) == 2:
-                    # 尝试用节次行的默认值
-                    course['startPeriod'] = sp
-                    course['endPeriod'] = ep
-
-                # 规范化
-                all_courses.append({
-                    'name': course['name'],
-                    'teacher': course.get('teacher', ''),
-                    'location': course.get('location', ''),
-                    'day': course['day'],
-                    'startPeriod': course['startPeriod'],
-                    'endPeriod': course['endPeriod'],
-                    'startWeek': 1,
-                    'totalWeeks': 20,
-                    'weekType': course.get('weekType', 'all'),
-                    'weeks': course.get('weeks', []),
-                    'note': course.get('note', '')
-                })
-
-    # 提取学期起始日期
-    import datetime
-    semester_start = ''
-    for r in range(0, min(3, len(rows))):
-        for c, val in enumerate(rows[r]):
-            val = str(val).strip()
-            m = re.search(r'打印日期[：:](\d{4}-\d{2}-\d{2})', val)
-            if m:
-                semester_start = m.group(1)
-
-    if start:
-        semester_start = start
-    elif semester_start:
-        print(f'注意: 未指定 --start，学期起点取自「打印日期」{semester_start}，'
-              f'这通常是学期中的某一天，算出来的周次会整体偏移。', file=sys.stderr)
-
-    if mask_teachers:
-        for c in all_courses:
-            c['teacher'] = mask_teacher(c.get('teacher'))
-
-    if school:
-        # 标题形如「<校名> <姓名> 学生个人课表」，只换第一段校名，后面保留
-        student_info = re.sub(r'^\s*\S+?(?=\s)', school, student_info, count=1)
-
-    if class_name:
-        semester_info = re.sub(r'班级：\s*\S+', f'班级：{class_name}', semester_info)
-
-    return {
-        'meta': {
-            'student': student_info,
-            'semester': semester_info,
-            'semesterStart': semester_start,
-            'convertTime': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            # 时段数 ≠ 课程数：一门课一周可能上 3 次
-            'totalCourses': len({c['name'] for c in all_courses}),
-            'totalSlots': len(all_courses),
-            'teacherMasked': bool(mask_teachers),
-            'sanitized': bool(school or class_name),
-        },
-        'courses': all_courses
-    }
+def _print_diags(diags, limit=10):
+    if not diags:
+        return
+    s = summarize(diags)
+    parts = []
+    for key, label in ((ERROR, '错误'), (WARNING, '警告'), (INFO, '提示')):
+        if s.get(key):
+            parts.append(f'{s[key]} {label}')
+    print(f'\n诊断：{s["total"]} 条（{" / ".join(parts)}）')
+    for d in diags[:limit]:
+        print(f'  {d}')
+    if len(diags) > limit:
+        print(f'  ……另有 {len(diags) - limit} 条，用 --report 看全部')
 
 
 def main():
     import argparse
-    p = argparse.ArgumentParser(description='教务系统课表 .xls → courses.json')
-    p.add_argument('filepath', help='导出的 .xls / .xlsx')
+    p = argparse.ArgumentParser(description='教务系统课表 .xls/.xlsx → courses.json')
+    p.add_argument('filepath', nargs='?', help='导出的 .xls / .xlsx')
     p.add_argument('--out', help='输出 JSON 路径（默认写在输入文件旁边）')
     p.add_argument('--start', help='学期首周周一 YYYY-MM-DD（强烈建议指定）')
     p.add_argument('--mask-teacher', action='store_true', dest='mask_teacher',
@@ -386,25 +779,48 @@ def main():
     p.add_argument('--school', help='替换标题里的学校名，如 --school 示例大学')
     p.add_argument('--class-name', dest='class_name',
                    help='替换学期行里的班级名，如 --class-name 示例班级')
+    p.add_argument('--layout', help='布局 JSON（先用 --print-layout 导一份再改）')
+    p.add_argument('--print-layout', action='store_true', dest='print_layout',
+                   help='打印内建布局并退出，用来给自己学校的导出格式改一份')
+    p.add_argument('--report', help='把全部诊断写成 JSON')
+    p.add_argument('--strict', action='store_true',
+                   help='出现警告或错误时以退出码 2 结束（适合放进脚本/CI）')
     args = p.parse_args()
+
+    if args.print_layout:
+        print(dump_layout(load_layout(args.layout) if args.layout else None))
+        return 0
+
+    if not args.filepath:
+        p.error('需要指定课表文件（或用 --print-layout 导出布局）')
 
     if not os.path.exists(args.filepath):
         print(f'错误: 文件不存在 - {args.filepath}')
-        sys.exit(1)
+        return 1
 
+    diags = []
     print(f'正在解析: {args.filepath}')
+    if args.layout:
+        print(f'  布局: {args.layout}')
     try:
         result = convert(args.filepath, start=args.start, mask_teachers=args.mask_teacher,
-                     school=args.school, class_name=args.class_name)
+                         school=args.school, class_name=args.class_name,
+                         layout=args.layout, diagnostics=diags)
     except Exception as e:
         print(f'解析失败: {e}')
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        return 1
+
+    if args.report:
+        with open(args.report, 'w', encoding='utf-8') as f:
+            json.dump({'diagnostics': [d.as_dict() for d in diags],
+                       'summary': summarize(diags)}, f, ensure_ascii=False, indent=2)
 
     if 'error' in result:
         print(f'错误: {result["error"]}')
-        sys.exit(1)
+        _print_diags(diags, limit=20)
+        return 1
 
     outpath = args.out or os.path.splitext(args.filepath)[0] + '_courses.json'
     with open(outpath, 'w', encoding='utf-8') as f:
@@ -418,6 +834,14 @@ def main():
     print(f'  教师姓名: {"已改为「姓+老师」" if args.mask_teacher else "原样保留"}')
     print(f'  输出文件: {outpath}')
 
+    _print_diags(diags)
+    if args.report:
+        print(f'  诊断报告: {args.report}')
+
+    if args.strict and any(d.severity in (ERROR, WARNING) for d in diags):
+        return 2
+    return 0
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

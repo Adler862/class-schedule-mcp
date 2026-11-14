@@ -131,6 +131,57 @@ python tools/build_single.py --courses config/mine.json --out dist/我的课表.
 解析器复用自微信小程序项目 `WXClassTable` 的 `tools/convert_xls.py`，这里只加了
 `--out` / `--start` / `--mask-teacher` 三个参数，解析逻辑没动。
 
+### 换一所学校：改配置，不改代码
+
+表格长什么样是**配置**：表头在第几行、星期列怎么认、节次标签什么格式、单元格里
+哪一行是地点，全在 `tools/convert_xls.py` 顶部的 `DEFAULT_LAYOUT` 里。
+
+```bash
+python tools/convert_xls.py --print-layout > my-school.json   # 导一份现状
+# 改完再跑
+python tools/convert_xls.py 课表.xls --layout my-school.json --start YYYY-MM-DD
+```
+
+`--layout` 做**深合并**，只写要改的那几条：别人的学校里星期写作 `Mon..Sun`，
+配置里加 `{"header": {"labels": {"Mon": 1, ...}}}` 就够，不必复制整份。
+
+几个常改的字段：
+
+| 字段 | 什么时候改 |
+|---|---|
+| `header.labels` | 星期写成 `周一` / `MON` / `一` |
+| `header.columns` | 星期列位置不规则，直接写死 `{"1": 1, "2": 3, ...}` |
+| `periods.subPeriods` | 一个大节含 3 小节而不是 2 |
+| `periods.rows` | 节次行不在固定间距，直接列行号 |
+| `periods.labelRegex` | 节次标签不叫「第 N 大节」 |
+| `cell.lineRules` | 地点/周次/备注的识别规则不同 |
+
+### 解析会告诉你哪里不对
+
+旧版遇到不认识的格子只是跳过，最后得到一份「看起来正常、但少了三门课」的 JSON。
+现在每条问题都带**行列坐标、原文、命中的规则**：
+
+```
+诊断：3 条（3 警告）
+  [W] R8C4 cell.week_range_reversed（规则 parseWeekInfo） 周次区间「5-2」是倒序的…
+  [W] R9C5 cell.no_week_info（规则 cell.lineRules） 「军事理论」没有周次信息…
+  [W] R5C3 cell.extra_lines（规则 cell.fieldOrder） 有 1 行没被任何规则认领…
+```
+
+```bash
+python tools/convert_xls.py 课表.xls --report report.json   # 全部诊断写成 JSON
+python tools/convert_xls.py 课表.xls --strict               # 有警告就退出码 2，可进 CI
+```
+
+诊断只走 stdout / `--report`，**不写进 `courses.json`**——数据文件保持干净，
+下游 `semester.py` 不需要知道诊断的存在。
+
+顺带修掉两个会静默产生错误课表的缺陷：
+
+- `1-15([单周])[01-02节]` 里的 `([单周])` 原本被节次的正则一起吃掉，单周标记丢失、
+  课变成每周都上。现在只摘 `[01-02节]` 这个记号，并把单周展开成 `1,3,…,15`。
+- 只写周次、不写节次的格子（`3,5,7,9([双周])`）原本整行认不出来，周次直接丢空。
+
 ## 截图
 
 | 课表主视图                          | 三维档案详情                           | 档案架全景                          |
@@ -280,7 +331,7 @@ MCP 服务启动时读这个文件，改完要重启客户端里的服务连接�
 
 | 脚本                                               | 作用                                                                                                                                                              |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / Web API / ICS 导出 / 单文件构建 / 模板与产物同步 / 拖拽、3D 滚轮、明暗主题护栏 / MCP 输出回归（122 个）                                                                              |
+| `python -m unittest discover -s tests/unit -t .` | 单元测试：学期引擎 / 课表解析与布局配置 / 诊断坐标 / 命令行退出码 / Web API / ICS 导出 / 单文件构建 / 模板与产物同步 / 拖拽、3D 滚轮、明暗主题护栏 / MCP 输出回归（161 个）                                                                              |
 | `cd tests/e2e && npm install && npm test`        | 真实浏览器回归（32 例）：Playwright Core 驱动本机 Edge，覆盖 2D 拖拽拾起、落位、交换、翻周、边界、撤销、持久化、文本选区、状态栏不位移、翻周不重绘、手机触摸、明暗主题三态与持久化，以及 3D 档案架与抽出课表纸的滚轮切周、控制台零报错；截图落在 `tests/e2e/artifacts/` |
 | `cd web3d && node build.mjs --check`             | 3D 产物与源码/配置是否同步，只比对不写文件                                                                                                                                         |
 | `tests/test_mcp_handshake.py`                    | 真实拉起服务进程，走 `initialize` / `tools/list` / `tools/call`，断言工具数量与名称                                                                                                 |
