@@ -2028,7 +2028,19 @@ var cw = weekOfDate(NOW);
 $('#sub').textContent = (DATA.meta.student || '') + ' · 今天' + DAY_NAMES[NOW.getDay() || 7]
   + ' · 第 ' + clampWeek(cw) + ' 周';
 buildWeekTicks();
-showWeek(clampWeek(cw), true);
+/* ?w=11 直接打开某一周：3D 档案架的「完整学期表格」跳过来带的就是它。
+   参数非法或越界就当没给、退回当前周——外部链接不该让页面打开就空白。 */
+var jumpWeek = 0;
+var _mw = /[?&]w=(\d{1,2})/.exec(location.search);
+if (_mw){
+  var _nw = parseInt(_mw[1], 10);
+  if (_nw >= 1 && _nw <= DATA.maxWeek) jumpWeek = _nw;
+}
+showWeek(jumpWeek || clampWeek(cw), true);
+if (jumpWeek && jumpWeek !== clampWeek(cw)){
+  /* 抬头那行讲的是「今天第几周」，跳去看别的周时会打架，补一句说清 */
+  $('#sub').textContent += ' · 正在看第 ' + jumpWeek + ' 周';
+}
 updateOvbar();
 
 var preset = (location.search.match(/[?&]q=([^&]*)/) || [])[1];

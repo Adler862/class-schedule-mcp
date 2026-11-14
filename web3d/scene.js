@@ -1195,7 +1195,7 @@ function openWeekSheet(week) {
   }
 
   const full = E('wsFull');
-  if (full) full.href = 'index.html?w=' + week;
+  if (full) full.href = (DATA.indexHref || 'index.html') + '?w=' + week;
 
   renderGrid(week, list);
   renderList(list);

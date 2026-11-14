@@ -18,6 +18,14 @@ function argOf(name, fallback) {
 const DATA_PATH = argOf('--courses', join(here, '..', 'config', 'demo-courses.json'));
 const OUT = argOf('--out', join(here, '..', 'docs', '3d.html'));
 
+/* 详情态那个「完整学期表格」按钮指向谁。默认 index.html（Pages 布局）；
+   自己导出的个人页如果叫别的名字（dist/我的课表.html），用 --index 指过去，
+   否则点进去就是 404。这个值是 href，不能走 resolve。 */
+const indexHref = (() => {
+  const i = process.argv.indexOf('--index');
+  return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : 'index.html';
+})();
+
 const res = await build({
   entryPoints: [join(here, 'scene.js')],
   bundle: true,
@@ -56,6 +64,7 @@ if (!(maxWeek > 0)) {
 
 const payload = {
   meta: raw.meta || {},
+  indexHref,
   courses,
   start,
   maxWeek,
