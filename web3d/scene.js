@@ -1146,12 +1146,23 @@ function renderStat(week, list) {
     + '其余时间留白。点右侧 EXPORT 可以把这一周导成 CSV。</p>';
 }
 
+/* 结束时刻 = 末小节开始 + 45 分钟，与 semester.py 的 period_end 完全一致。
+   注意不能用「开始 + 节数×45」：两小节之间还有 10 分钟课间，
+   1-2 节是 08:30–10:10，不是 10:00。
+   原来取的是「下一节的开始」，直接把 1-2 节写成 10:30 结束。 */
+function plusMinutes(hhmm, minutes) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '');
+  if (!m) return '';
+  const total = Number(m[1]) * 60 + Number(m[2]) + minutes;
+  return pad2(Math.floor(total / 60) % 24) + ':' + pad2(total % 60);
+}
+
 function exportWeek(week, list) {
   const head = ['星期', '节次', '开始', '结束', '课程', '教师', '地点'];
   const lines = [head.join(',')];
   for (const c of list) {
     const t0 = (DATA.periodTimes && DATA.periodTimes[c.startPeriod]) || '';
-    const t1 = (DATA.periodTimes && DATA.periodTimes[c.endPeriod + 1]) || '';
+    const t1 = plusMinutes((DATA.periodTimes && DATA.periodTimes[c.endPeriod]) || '', 45);
     const row = [DAY_NAMES[c.day], c.startPeriod + '-' + c.endPeriod, t0, t1,
       c.name, c.teacher || '', c.room || c.location || ''];
     lines.push(row.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','));
