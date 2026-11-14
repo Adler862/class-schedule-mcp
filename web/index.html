@@ -401,11 +401,29 @@ async function ask(text){
 }
 
 /* ---------- 调课 ----------
-   这一版调课记录存在服务端 config/overrides.json，换设备也还在。
+   调课记录存在服务端的 SQLite 里（config/overrides.db），换设备也还在。
    请求完直接重拉当前周，服务端已经把例外算进去了，前端不重复实现一遍。 */
 let ovs = [];
 let edit = null;
 const sheetEl = $('#sheet'), scrimEl = $('#scrim');
+
+/* ---------- 访问口令 ----------
+   只监听回环时服务端不校验，这一段等于没有。一旦用 --host 0.0.0.0 暴露到局域网，
+   写接口就要口令：启动时控制台会打印一条带 ?t= 的链接，用手机打开那一条，
+   口令就存进 localStorage，地址栏里的参数随即抹掉——不用手输。
+   读接口不设限，蹭网的人最多看看你的课表。 */
+const TOKEN_KEY = 'schedule.token';
+function token(){
+  try{ return localStorage.getItem(TOKEN_KEY) || ''; }catch(e){ return ''; }
+}
+function takeTokenFromUrl(){
+  const m = /[?&]t=([^&]+)/.exec(location.search);
+  if (!m) return;
+  try{ localStorage.setItem(TOKEN_KEY, decodeURIComponent(m[1])); }catch(e){ }
+  const rest = location.search.replace(/[?&]t=[^&]*/, '').replace(/^&/, '?');
+  history.replaceState(null, '', location.pathname + (rest === '?' ? '' : rest) + location.hash);
+}
+takeTokenFromUrl();
 
 function dateOfWeekDay(w, day){
   const start = new Date(meta.semesterStart + 'T00:00:00');
@@ -512,11 +530,19 @@ function renderSheet(){
 }
 
 async function postOverride(payload){
+  const headers = { 'Content-Type': 'application/json' };
+  if (token()) headers['X-Schedule-Token'] = token();
   const r = await fetch('/api/overrides', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload)
   });
+  if (r.status === 401){
+    /* 口令失效或这台设备还没有。别让用户猜，直接说怎么办。 */
+    try{ localStorage.removeItem(TOKEN_KEY); }catch(e){ }
+    alert('这台设备没有访问口令。请在电脑上重启服务，用它打印的那条带 ?t= 的链接打开一次。');
+    return false;
+  }
   const data = await r.json();
   if (!r.ok){
     alert(data.error || '保存失败');

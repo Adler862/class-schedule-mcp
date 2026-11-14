@@ -236,5 +236,45 @@ class ResponseSemanticsTest(unittest.TestCase):
         self.assertTrue(payload)
 
 
+class WriteAuthTest(unittest.TestCase):
+    """局域网模式：读接口不限，写接口要口令。
+
+    只监听回环（默认）时 token 为 None，等于完全不校验——本机用起来没变化。
+    """
+
+    BODY = json.dumps({'action': 'nope'}).encode('utf-8')
+
+    def rsp(self, headers=None, token=None, method='POST', path='/api/overrides'):
+        return webapp.respond(method, path, {}, self.BODY, headers=headers or {},
+                              root=ROOT, token=token)
+
+    def test_loopback_mode_checks_nothing(self):
+        # token=None：请求直接进业务逻辑，返回值由 action 非法决定
+        self.assertEqual(self.rsp()[0], 400)
+
+    def test_missing_header_rejected(self):
+        status, headers, payload = self.rsp(token='s3cret')
+        self.assertEqual(status, 401)
+        self.assertIn('口令', json.loads(payload.decode('utf-8'))['error'])
+        self.assertEqual(headers['Cache-Control'], 'no-store')
+
+    def test_wrong_token_rejected(self):
+        self.assertEqual(self.rsp({'X-Schedule-Token': 'nope'}, token='s3cret')[0], 401)
+
+    def test_right_token_passes_through(self):
+        self.assertEqual(
+            self.rsp({'X-Schedule-Token': 's3cret'}, token='s3cret')[0], 400)
+
+    def test_header_name_is_case_insensitive(self):
+        self.assertEqual(
+            self.rsp({'x-schedule-token': 's3cret'}, token='s3cret')[0], 400)
+
+    def test_get_stays_open(self):
+        status, _, payload = self.rsp(headers={}, token='s3cret',
+                                      method='GET', path='/api/meta')
+        self.assertEqual(status, 200)
+        self.assertTrue(payload)
+
+
 if __name__ == '__main__':
     unittest.main()
