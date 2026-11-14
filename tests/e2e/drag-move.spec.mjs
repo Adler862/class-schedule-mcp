@@ -91,6 +91,24 @@ async function run(name, fn, contextOptions = {}, pagePath = '/docs/index.html')
   const is3d = pagePath.indexOf('3d.html') >= 0;
   const ctx = await browser.newContext({ viewport: VIEWPORT, ...contextOptions });
   const page = await ctx.newPage();
+  /* 把「今天」整体平移回第 10 周（2026-11-02 周一）。
+     这套用例是按第 10 周的课表写的，不锁的话真实时间一过第 10 周，
+     页面打开的是第 11 周，dateOf(10, 1) 那些格子根本不存在，整套变红——
+     那不是回归，是时间炸弹。
+
+     注意是「平移」不是「冻结」：页面里有 520ms 免疫期这种靠 Date.now()
+     算经过时间的逻辑，冻结时钟会让差值永远是 0，弹层再也关不掉。 */
+  await page.addInitScript(() => {
+    const REAL = Date;
+    const OFFSET = new REAL('2026-11-02T09:00:00+08:00').getTime() - REAL.now();
+    class ShiftedDate extends REAL {
+      constructor(...args) { super(...(args.length ? args : [REAL.now() + OFFSET])); }
+      static now() { return REAL.now() + OFFSET; }
+    }
+    ShiftedDate.parse = REAL.parse;
+    ShiftedDate.UTC = REAL.UTC;
+    window.Date = ShiftedDate;
+  });
   const errors = [];
   page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
   page.on('console', m => {
