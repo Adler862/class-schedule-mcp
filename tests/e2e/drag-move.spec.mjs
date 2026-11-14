@@ -647,6 +647,24 @@ await run('3D：保持自己的印刷配色，不引入 2D 主题按钮', async 
   assert.equal(await page.locator('#themeBtn').count(), 0);
 }, {}, '/docs/3d.html');
 
+/* 详情态右下角那个「完整学期表格」原来是硬编码的 index.html?w=N。
+   个人页产物不在 docs/ 下、也没有 index.html，点进去就是 ERR_FILE_NOT_FOUND；
+   而 2D 页那边也从来没支持过 ?w=，周次在跳转时白白丢掉。两头都修了，这条锁住。 */
+await run('3D：完整学期表格带着周次跳到 2D 的同一周', async ({ page }) => {
+  await page.waitForSelector('#wsFull', { state: 'visible' });
+  const href = await page.getAttribute('#wsFull', 'href');
+  assert.match(href, /^index\.html\?w=5$/, '链接应指向同目录的 index.html 并带周次：' + href);
+
+  await page.click('#wsFull');
+  await page.waitForURL(/index\.html\?w=5/, { timeout: 5000 });
+  await page.waitForSelector('#grid .course', { timeout: 5000 });
+
+  const label = (await page.locator('#weekLabel').innerText()).replace(/\s+/g, ' ');
+  assert.match(label, /\b05\b/, '2D 应停在第五周，实际是：' + label);
+  const sub = (await page.locator('#sub').innerText()).replace(/\s+/g, ' ');
+  assert.match(sub, /正在看第 5 周/, '抬头要说明这不是当前周：' + sub);
+}, {}, '/docs/3d.html?w=5');
+
 await browser.close();
 server.close();
 
