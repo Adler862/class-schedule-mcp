@@ -4,10 +4,19 @@
 import { build } from 'esbuild';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = join(here, '..', 'docs', '3d.html');
+
+/* --courses / --out 用来给自己导出的课表单独出一份：
+     node build.mjs --courses ../output/mine.json --out ../dist/我的课表3d.html
+   不带参数时维持原行为（读演示数据、写 docs/3d.html），单测与 Pages 都不受影响。 */
+function argOf(name, fallback) {
+  const i = process.argv.indexOf(name);
+  return i > 0 && process.argv[i + 1] ? resolve(process.argv[i + 1]) : fallback;
+}
+const DATA_PATH = argOf('--courses', join(here, '..', 'config', 'demo-courses.json'));
+const OUT = argOf('--out', join(here, '..', 'docs', '3d.html'));
 
 const res = await build({
   entryPoints: [join(here, 'scene.js')],
@@ -22,8 +31,7 @@ const res = await build({
 const code = res.outputFiles[0].text;
 
 // 课表数据在构建时注入：场景里只做渲染，不在运行时 fetch，file:// 才能直接用。
-const dataPath = join(here, '..', 'config', 'demo-courses.json');
-const raw = JSON.parse(await readFile(dataPath, 'utf8'));
+const raw = JSON.parse(await readFile(DATA_PATH, 'utf8'));
 const courses = (raw.courses || []).map(c => ({
   name: c.name, teacher: c.teacher || '', room: c.room || '',
   location: c.location || '', day: c.day,
@@ -86,15 +94,15 @@ const html = shell
    单测用它锁住「改了 scene.js / shell.html / config 忘了重建」。 */
 if (process.argv.includes('--check')) {
   let current = '';
-  try { current = await readFile(out, 'utf8'); } catch { /* 产物还不存在 */ }
+  try { current = await readFile(OUT, 'utf8'); } catch { /* 产物还不存在 */ }
   if (current !== html) {
-    console.error('STALE: docs/3d.html 与源码/配置不一致，请运行 npm run build');
+    console.error(`STALE: ${OUT} 与源码/配置不一致，请运行 npm run build`);
     process.exit(1);
   }
-  console.log('OK: docs/3d.html 与源码一致');
+  console.log(`OK: ${OUT} 与源码一致`);
 } else {
-  await mkdir(dirname(out), { recursive: true });
-  await writeFile(out, html, 'utf8');
-  console.log(`已生成 ${out}  ${(Buffer.byteLength(html) / 1024).toFixed(0)} KB`
+  await mkdir(dirname(OUT), { recursive: true });
+  await writeFile(OUT, html, 'utf8');
+  console.log(`已生成 ${OUT}  ${(Buffer.byteLength(html) / 1024).toFixed(0)} KB`
     + `  · ${courses.length} 个时段 · 起点 ${start} · ${maxWeek} 周`);
 }

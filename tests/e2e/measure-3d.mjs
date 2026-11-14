@@ -52,7 +52,12 @@ const errs = [];
 page.on('pageerror', e => errs.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
 
-await page.goto(`${BASE}/docs/3d.html`, { waitUntil: 'load' });
+/* --page 可指定仓库内的另一个产物，例如 --page dist/我的课表3d.html */
+const pageArg = (() => {
+  const i = process.argv.indexOf('--page');
+  return i > 0 && process.argv[i + 1] ? process.argv[i + 1].replace(/^\/+/, '') : 'docs/3d.html';
+})();
+await page.goto(`${BASE}/${encodeURI(pageArg)}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__sceneReady === true', { timeout: 20000 });
 await page.waitForTimeout(1200);
 
