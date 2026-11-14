@@ -111,7 +111,7 @@ fake_items = [
 ]
 
 prefs_real = ns['_load_prefs']()
-ns['_collect_news'] = lambda p: (fake_items, ['60s_general'])
+ns['_collect_news'] = lambda p, budget=None, stats=None: (fake_items, ['60s_general'])
 ns['_cached'] = lambda k: None
 ns['_set_cache'] = lambda *a, **k: None
 out = ns['build_news']()

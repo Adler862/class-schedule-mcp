@@ -19,7 +19,7 @@ class-schedule-mcp v3 —— 课表 + 每日新闻 MCP 服务（Cherry Studio / 
   板块、关键词、配额、屏蔽词、源开关全部在 news_prefs.json 里，可手动编辑或语音调整。
 """
 import sys, os, re, json, time, datetime, urllib.request, urllib.parse, random
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 # --- 复用课表引擎 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -552,20 +552,59 @@ HUBS = {
 }
 
 
-def _collect_news(prefs):
+# 抓取预算。单源自己还有 socket 超时（多数 8s），但**总预算**是另一回事：
+# 原实现每个 future 各等 15 秒，串着等意味着 9 个源坏掉三四个就能把一次早报拖到
+# 一分钟以上；而且 `with ThreadPoolExecutor` 退出时会等所有线程收工，预算形同虚设。
+NEWS_BUDGET_S = float(os.environ.get('SCHEDULE_NEWS_BUDGET') or 8)
+NEWS_WORKERS = 8
+
+
+def _collect_news(prefs, budget=None, stats=None):
     """并发抓取各源，返回 (items, failed_sources)。
-    单源失败（限流/风控/超时）只记入 failed，不影响其他板块。"""
+
+    budget 是整个抓取环节的**总预算**（秒），不是每个源各给一份。
+    超时的源记为 failed，调用方照常出早报，只是缺那几块。
+
+    stats 可选，按源填 (状态, 耗时)：ok / error / timeout。
+    超时的线程不会立刻消失——urllib 没有协作取消，它得等自己的 socket 超时，
+    但调用方不必再等它。
+    """
     sources = [k for k, on in (prefs.get('sources') or {}).items() if on and k in SOURCE_FUNCS]
     items, failed = [], []
     if not sources:
         return items, failed
-    with ThreadPoolExecutor(max_workers=min(8, len(sources))) as ex:
+
+    budget = NEWS_BUDGET_S if budget is None else budget
+    started = time.monotonic()
+    deadline = started + budget
+    stats = stats if stats is not None else {}
+
+    ex = ThreadPoolExecutor(max_workers=min(NEWS_WORKERS, len(sources)))
+    try:
         futs = {ex.submit(SOURCE_FUNCS[s]): s for s in sources}
-        for fut, s in futs.items():
-            try:
-                items.extend(fut.result(timeout=15) or [])
-            except Exception:
-                failed.append(s)
+        pending = set(futs)
+        while pending:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            done, pending = wait(pending, timeout=left, return_when=FIRST_COMPLETED)
+            for fut in done:
+                src = futs[fut]
+                if fut.cancelled():
+                    continue
+                if fut.exception() is not None:
+                    failed.append(src)
+                    stats[src] = ('error', round(time.monotonic() - started, 2))
+                    continue
+                items.extend(fut.result() or [])
+                stats[src] = ('ok', round(time.monotonic() - started, 2))
+        for fut in pending:
+            src = futs[fut]
+            failed.append(src)
+            stats[src] = ('timeout', round(time.monotonic() - started, 2))
+    finally:
+        # 不等没收工的线程：等下去等于把上面省下的时间又还回去
+        ex.shutdown(wait=False, cancel_futures=True)
     return items, failed
 
 
@@ -664,7 +703,13 @@ def build_news():
     prefs = _load_prefs()
     interest = list(prefs.get('interest') or [])
     cats = _prefs_cats(prefs)
-    items, failed = _collect_news(prefs)
+    stats = {}
+    items, failed = _collect_news(prefs, stats=stats)
+    if os.environ.get('SCHEDULE_NEWS_DEBUG'):
+        # 只能写 stderr：stdio 模式下 stdout 是 JSON-RPC 通道，插一行日志就废了
+        sys.stderr.write('[news] ' + ' '.join(
+            f'{k}={v[0]}/{v[1]}s' for k, v in sorted(stats.items(),
+                                                     key=lambda kv: -kv[1][1])) + '\n')
     if not items:
         return ('⚠️ 所有新闻源暂时不可用（可能被限流）。稍后再试，或让 iris 用 Iris Scout 的 '
                 'fetch_rss / 联网搜索获取今日热点作为替代。')
@@ -766,7 +811,12 @@ def build_news():
         lines.append('')
 
     if failed:
-        lines.append(f'（今日 {len(failed)} 个源暂时不可用：{"、".join(failed)}）')
+        # 超时和报错分开说：前者是慢，后者是挂了，用户看到的处理方式不一样
+        tags = {'timeout': '超时', 'error': '失败'}
+        detail = '、'.join(
+            f'{s}（{tags[stats[s][0]]}）' if s in stats and stats[s][0] in tags else s
+            for s in failed)
+        lines.append(f'（今日 {len(failed)} 个源暂时不可用：{detail}）')
         lines.append('')
 
     shown = sum(len(v) for v in sec_pick.values()) + len(hot_general)
