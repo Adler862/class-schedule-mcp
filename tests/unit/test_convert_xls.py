@@ -243,6 +243,15 @@ class SheetTest(unittest.TestCase):
 
 
 class LayoutTest(unittest.TestCase):
+    def test_header_row_shifts_and_extra_trailing_column(self):
+        """真实导出的形状：表头不一定在固定行，右侧常多一个空列。"""
+        rows = demo_rows(odd_even=False)
+        rows.insert(0, [B] * 9)          # 前面多一行空行，表头整体下移一行
+        rows = [r + [B] for r in rows]   # 右侧多一列空列
+        r = parse(rows)
+        self.assertEqual(r['meta']['totalSlots'], 7)
+        self.assertEqual(by_name(r, '数据结构')['day'], 1)
+
     def test_weekday_labels_variant(self):
         rows = demo_rows()
         rows[3] = [B, '周一', '周二', '周三', '周四', '周五', '周六', '周日']
