@@ -34,18 +34,23 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length') or 0)
         body = self.rfile.read(length) if length else None
         try:
-            status, ctype, payload = webapp.handle(
-                method, parsed.path, query, body, root=webapp.REPO_ROOT)
+            # respond 而不是 handle：多出来的是 ETag / Cache-Control / gzip 这些协议细节，
+            # 内容逻辑仍然全在 webapp.handle 里（它的单测不受影响）
+            status, headers, payload = webapp.respond(
+                method, parsed.path, query, body,
+                headers=self.headers, root=webapp.REPO_ROOT)
         except Exception as exc:  # 兜底：不让一个异常打挂整个进程
-            status, ctype, payload = 500, 'application/json; charset=utf-8', json.dumps(
+            status = 500
+            headers = {'Content-Type': 'application/json; charset=utf-8'}
+            payload = json.dumps(
                 {'error': f'{type(exc).__name__}: {exc}'}, ensure_ascii=False).encode('utf-8')
 
         self.send_response(status)
-        self.send_header('Content-Type', ctype)
+        for name, value in headers.items():
+            self.send_header(name, value)
         self.send_header('Content-Length', str(len(payload)))
-        self.send_header('Cache-Control', 'no-store')
         self.end_headers()
-        if method != 'HEAD':
+        if method != 'HEAD' and payload:
             self.wfile.write(payload)
 
     def do_GET(self):
